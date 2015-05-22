@@ -50,7 +50,7 @@ pc.extend(pc, function () {
      * @name pc.Shader
      * @class A shader is a program that is repsonsible for rendering graphical primitives on a device's
      * graphics processor.
-     * @constructor Creates a new shader object. The shader is generated from a shader definition. This 
+     * @constructor Creates a new shader object. The shader is generated from a shader definition. This
      * shader definition specifies the code for processing vertices and fragments processed by the GPU.
      * The language of the code is GLSL (or more specifically ESSL, the OpenGL ES Shading Language). The
      * shader definition also describes how the PlayCanvas engine should map vertex buffer elements onto
@@ -60,7 +60,7 @@ pc.extend(pc, function () {
      * @param {Object} definition.attributes Object detailing the mapping of vertex shader attribute names to semantics (pc.SEMANTIC_*).
      * @param {String} definition.vshader Vertex shader source (GLSL code).
      * @param {String} definition.fshader Fragment shader source (GLSL code).
-     * @example 
+     * @example
      * // Create a shader that renders primitives with a solid red color
      * var shaderDefinition = {
      *     attributes: {
@@ -83,11 +83,11 @@ pc.extend(pc, function () {
      *         "}"
      *     ].join("\n")
      * };
-     * 
+     *
      * shader = new pc.Shader(graphicsDevice, shaderDefinition);
      * @author Will Eastcott
      */
-    var Shader = function (graphicsDevice, definition) {
+    var Shader = function (graphicsDevice, definition, dbg) {
         this.device = graphicsDevice;
         this.definition = definition;
 
@@ -95,6 +95,9 @@ pc.extend(pc, function () {
         var vertexShader = createShader(gl, gl.VERTEX_SHADER, definition.vshader);
         var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, definition.fshader);
         this.program = createProgram(gl, vertexShader, fragmentShader);
+        if (dbg) {
+            //console.log(this.device.extDebug.getTranslatedShaderSource(fragmentShader));
+        }
         gl.deleteShader(vertexShader);
         gl.deleteShader(fragmentShader);
 
@@ -167,5 +170,5 @@ pc.extend(pc, function () {
 
     return {
         Shader: Shader
-    }; 
+    };
 }());

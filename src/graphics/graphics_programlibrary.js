@@ -36,12 +36,12 @@ pc.extend(pc, function () {
         if (!shader) {
             var gd = this._device;
             var shaderDefinition = generator.createShaderDefinition(gd, options);
-            shader = this._cache[key] = new pc.Shader(gd, shaderDefinition);
+            shader = this._cache[key] = new pc.Shader(gd, shaderDefinition, options.debug);
         }
         return shader;
     };
 
     return {
         ProgramLibrary: ProgramLibrary
-    }; 
+    };
 }());

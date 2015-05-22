@@ -536,6 +536,37 @@ pc.extend(pc, function () {
                               prefilteredCubeMap8 &&
                               prefilteredCubeMap4;
 
+                prefilteredCubeMap128.magFilter = pc.FILTER_NEAREST;
+                prefilteredCubeMap128.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
+                if (!device._invBiasCubemap) {
+                    var tex = new pc.gfx.Texture(device, {
+                        cubemap: true,
+                        fixCubemapSeams: true,
+                        autoMipmap: false,
+                        format: pc.PIXELFORMAT_L8,
+                        width: 128,
+                        height: 128
+                    });
+                    tex.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+                    tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+                    tex.magFilter = pc.FILTER_NEAREST;
+                    tex.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
+                    var res = 128;
+                    var j;
+                    for(i=0; i<8; i++) {
+                        var arr = new Uint8Array(res * res);
+                        for(j=0; j<res*res; j++) {
+                            arr[j] = i;
+                        }
+                        tex._levels[i] = [arr, arr, arr, arr, arr, arr];
+                        res /= 2;
+                        res = Math.max(res, 4);
+                    }
+                    tex.upload();
+                    device._invBiasCubemap = tex;
+                }
+                this.setParameter('texture_invBiasCubeMap', device._invBiasCubemap);
+
                 if (useTexCubeLod) {
                     if (prefilteredCubeMap128._levels.length<6) {
                         if (allMips) {
@@ -666,6 +697,7 @@ pc.extend(pc, function () {
             this._collectLights(pc.LIGHTTYPE_SPOT,        lights, lightsSorted, mask);
 
             options.lights = lightsSorted;
+            options.debug = true;
 
             // Gamma correct colors
             for(i=0; i<3; i++) {
