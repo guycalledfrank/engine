@@ -536,8 +536,8 @@ pc.extend(pc, function () {
                               prefilteredCubeMap8 &&
                               prefilteredCubeMap4;
 
-                prefilteredCubeMap128.magFilter = pc.FILTER_NEAREST;
-                prefilteredCubeMap128.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
+                //prefilteredCubeMap128.magFilter = pc.FILTER_NEAREST;
+                //prefilteredCubeMap128.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
                 if (!device._invBiasCubemap) {
                     var tex = new pc.gfx.Texture(device, {
                         cubemap: true,
@@ -549,8 +549,8 @@ pc.extend(pc, function () {
                     });
                     tex.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
                     tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
-                    tex.magFilter = pc.FILTER_NEAREST;
-                    tex.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
+                    //tex.magFilter = pc.FILTER_NEAREST;
+                    //tex.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST;
                     var res = 128;
                     var j;
                     for(i=0; i<8; i++) {
