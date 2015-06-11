@@ -244,9 +244,9 @@ pc.programlib.phong = {
         for(var p in pc._matTex2D) {
             var mname = p + "Map";
             if (options[mname + "VertexColor"]) {
+                var cname = mname + "Channel";
                 options[cname] = this._correctChannel(p, options[cname]);
             } else if (options[mname]) {
-                var cname = mname + "Channel";
                 var tname = mname + "Transform";
                 var uname = mname + "Uv";
                 var cname = mname + "Channel";
