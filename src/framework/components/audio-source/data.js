@@ -11,8 +11,7 @@ pc.AudioSourceComponentData = function AudioSourceComponentData() {
     this.minDistance = 1;
     this.maxDistance = 10000;
     this.rollOffFactor = 1;
-    this.distanceModel = pc.DISTANCE_INVERSE;
-
+    
     // not serialized
     this.paused = true;
 
