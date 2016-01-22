@@ -275,6 +275,28 @@ pc.extend(pc, function () {
         return { min: minz, max: maxz };
     }
 
+    function _getZFromAABBSimple(w2sc, aabbMin, aabbMax, lcamMinX, lcamMaxX, lcamMinY, lcamMaxY) {
+        _sceneAABB_LS[0].x = _sceneAABB_LS[1].x = _sceneAABB_LS[2].x = _sceneAABB_LS[3].x = aabbMin.x;
+        _sceneAABB_LS[1].y = _sceneAABB_LS[3].y = _sceneAABB_LS[7].y = _sceneAABB_LS[5].y = aabbMin.y;
+        _sceneAABB_LS[2].z = _sceneAABB_LS[3].z = _sceneAABB_LS[6].z = _sceneAABB_LS[7].z = aabbMin.z;
+        _sceneAABB_LS[4].x = _sceneAABB_LS[5].x = _sceneAABB_LS[6].x = _sceneAABB_LS[7].x = aabbMax.x;
+        _sceneAABB_LS[0].y = _sceneAABB_LS[2].y = _sceneAABB_LS[4].y = _sceneAABB_LS[6].y = aabbMax.y;
+        _sceneAABB_LS[0].z = _sceneAABB_LS[1].z = _sceneAABB_LS[4].z = _sceneAABB_LS[5].z = aabbMax.z;
+
+        var minz = 9999999999;
+        var maxz = -9999999999;
+        var z;
+
+        for ( var i = 0; i < 8; ++i ) {
+            w2sc.transformPoint( _sceneAABB_LS[i], _sceneAABB_LS[i] );
+            z = _sceneAABB_LS[i].z;
+            if (z < minz) minz = z;
+            if (z > maxz) maxz = z;
+        }
+
+        return { min: minz, max: maxz };
+    }
+
     //////////////////////////////////////
     // Shadow mapping support functions //
     //////////////////////////////////////
@@ -341,6 +363,23 @@ pc.extend(pc, function () {
             shadowBuffer = createShadowMap(device, light._shadowResolution, light._shadowResolution);
             light._shadowCamera.setRenderTarget(shadowBuffer);
         }
+    }
+
+    function getShadowCamera(device, light) {
+        var shadowCam = light._shadowCamera;
+        var shadowBuffer;
+
+        if (shadowCam === null) {
+            shadowCam = light._shadowCamera = createShadowCamera(device);
+            createShadowBuffer(device, light);
+        } else {
+            shadowBuffer = shadowCam.getRenderTarget();
+            if ((shadowBuffer.width !== light._shadowResolution) || (shadowBuffer.height !== light._shadowResolution)) {
+                createShadowBuffer(device, light);
+            }
+        }
+
+        return shadowCam;
     }
 
     /**
@@ -479,23 +518,6 @@ pc.extend(pc, function () {
     }
 
     pc.extend(ForwardRenderer.prototype, {
-
-        getShadowCamera: function(device, light) {
-            var shadowCam = light._shadowCamera;
-            var shadowBuffer;
-
-            if (shadowCam === null) {
-                shadowCam = light._shadowCamera = createShadowCamera(device);
-                createShadowBuffer(device, light);
-            } else {
-                shadowBuffer = shadowCam.getRenderTarget();
-                if ((shadowBuffer.width !== light._shadowResolution) || (shadowBuffer.height !== light._shadowResolution)) {
-                    createShadowBuffer(device, light);
-                }
-            }
-
-            return shadowCam;
-        },
 
         updateCameraFrustum: function(camera) {
             var projMat = camera.getProjectionMatrix();
@@ -928,7 +950,7 @@ pc.extend(pc, function () {
 
                 if (light.getCastShadows() && light.getEnabled() && light.shadowUpdateMode!==pc.SHADOWUPDATE_NONE) {
                     if (light.shadowUpdateMode===pc.SHADOWUPDATE_THISFRAME) light.shadowUpdateMode = pc.SHADOWUPDATE_NONE;
-                    var shadowCam = this.getShadowCamera(device, light);
+                    var shadowCam = getShadowCamera(device, light);
                     var passes = 1;
                     var pass;
 
@@ -996,14 +1018,12 @@ pc.extend(pc, function () {
                     } else if (type === pc.LIGHTTYPE_SPOT) {
 
                         // don't update invisible light
-                        if (camera.frustumCulling) {
-                            tempSphere.radius = light.getAttenuationEnd() * 0.5;
-                            spotCenter.copy(light._node.forward);
-                            spotCenter.scale(tempSphere.radius);
-                            spotCenter.add(light._node.getPosition());
-                            tempSphere.center = spotCenter;
-                            if (!camera._frustum.containsSphere(tempSphere)) continue;
-                        }
+                        tempSphere.radius = light.getAttenuationEnd() * 0.5;
+                        spotCenter.copy(light._node.forward);
+                        spotCenter.scale(tempSphere.radius);
+                        spotCenter.add(light._node.getPosition());
+                        tempSphere.center = spotCenter;
+                        if (!camera._frustum.containsSphere(tempSphere)) continue;
 
                         shadowCam.setProjection(pc.PROJECTION_PERSPECTIVE);
                         shadowCam.setNearClip(light.getAttenuationEnd() / 1000);
@@ -1015,11 +1035,9 @@ pc.extend(pc, function () {
                     } else if (type === pc.LIGHTTYPE_POINT) {
 
                         // don't update invisible light
-                        if (camera.frustumCulling) {
-                            tempSphere.center = light._node.getPosition();
-                            tempSphere.radius = light.getAttenuationEnd();
-                            if (!camera._frustum.containsSphere(tempSphere)) continue;
-                        }
+                        tempSphere.center = light._node.getPosition();
+                        tempSphere.radius = light.getAttenuationEnd();
+                        if (!camera._frustum.containsSphere(tempSphere)) continue;
 
                         shadowCam.setProjection(pc.PROJECTION_PERSPECTIVE);
                         shadowCam.setNearClip(light.getAttenuationEnd() / 1000);
@@ -1090,7 +1108,8 @@ pc.extend(pc, function () {
                             }
 
                             // 2. Calculate minz/maxz based on this AABB
-                            var z = _getZFromAABB( shadowCamView, visibleSceneAabb.getMin(), visibleSceneAabb.getMax(), minx, maxx, miny, maxy );
+                            var z = _getZFromAABBSimple( shadowCamView, visibleSceneAabb.getMin(), visibleSceneAabb.getMax(), minx, maxx, miny, maxy );
+                            pc.aabb = visibleSceneAabb;
 
                             // Always use the scene's aabb's Z value
                             // Otherwise object between the light and the frustum won't cast shadow.
