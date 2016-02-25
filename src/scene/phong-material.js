@@ -2,6 +2,7 @@ pc.extend(pc, function () {
 
     var _tempTiling = new pc.Vec3();
     var _tempOffset = new pc.Vec3();
+    var forceTransform = new pc.Vec4(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
 
     /**
      * @name pc.PhongMaterial
@@ -844,7 +845,7 @@ pc.extend(pc, function () {
                     options.lightMap = true;
                     options.lightMapChannel = "rgb";
                     options.lightMapUv = 1;
-                    options.lightMapTransform = 0;
+                    options.lightMapTransform = this._getMapTransformID(forceTransform, "lightMapUv");
                     options.lightMapWithoutAmbient = true;
                     options.useRgbm = true;
                 }

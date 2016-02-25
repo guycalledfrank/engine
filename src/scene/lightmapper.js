@@ -1,6 +1,8 @@
 pc.extend(pc, function () {
 
     var maxSize = 2048;
+    var atlasSize = 1024;
+    var maxAtlasableSize = 512;
     var maskDynamic = 1;
     var maskBaked = 2;
     var maskLightmap = 4;
@@ -13,6 +15,10 @@ pc.extend(pc, function () {
     var lightBounds = new pc.BoundingBox();
     var tempSphere = {};
     var lmMaterial;
+
+    var forceTiling = new pc.Vec2(0.9,0.9);
+    var forceOffset = new pc.Vec2(0,0);
+    var identityMapTransform = new pc.Vec4(1,1,0,0);
 
     function collectModels(node, nodes, nodesMeshInstances, allNodes) {
         if (!node.enabled) return;
@@ -67,6 +73,97 @@ pc.extend(pc, function () {
             collectModels(children[i], nodes, nodesMeshInstances, allNodes);
         }
     }
+
+    function fits(what, where) {
+        return (what.z <= where.z && what.w <= where.w);
+    }
+
+    function fitsExactly(what, where) {
+        return (what.z === where.z && what.w === where.w);
+    }
+
+    function insertToAtlas(node, id, aabb) {
+        if (node.leaf) {
+            if (node.id >= 0) {
+                return null;
+            }
+            if (!fits(aabb, node.aabb)) return null;
+            if (fitsExactly(aabb, node.aabb)) {
+                node.id = id;
+                return node;
+            }
+            var r0 = {x:0,y:0,z:0,w:0};
+            var r1 = {x:0,y:0,z:0,w:0};
+            var dw = node.aabb.z - aabb.z;
+            var dh = node.aabb.w - aabb.w;
+            if (dw > dh) {
+                r0.x = node.aabb.x;
+                r0.y = node.aabb.y;
+                r0.z = aabb.z;
+                r0.w = node.aabb.w;
+
+                r1.x = node.aabb.x + aabb.z;
+                r1.y = node.aabb.y;
+                r1.z = node.aabb.z - aabb.z;
+                r1.w = node.aabb.w;
+            } else {
+                r0.x = node.aabb.x;
+                r0.y = node.aabb.y;
+                r0.z = node.aabb.z;
+                r0.w = aabb.w;
+
+                r1.x = node.aabb.x;
+                r1.y = node.aabb.y + aabb.w;
+                r1.z = node.aabb.z;
+                r1.w = node.aabb.w - aabb.w;
+            }
+            node.leaf = false;
+            node.child = [];
+            node.child[0] = {aabb:r0, id:-1, child:[], leaf:true};
+            node.child[1] = {aabb:r1, id:-1, child:[], leaf:true};
+            return insertToAtlas(node.child[0], id, aabb);
+        } else {
+            for(var i=0; i<node.child.length; i++) {
+                var result = insertToAtlas(node.child[i], id, aabb);
+                if (result) return result;
+            }
+            return null;
+        }
+    }
+
+    function allocateTexture(device, size, stats, texPool) {
+        var tex = new pc.Texture(device, {width:size,
+                                      height:size,
+                                      format:pc.PIXELFORMAT_R8_G8_B8_A8,
+                                      autoMipmap:false,
+                                      rgbm:true});
+        tex.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+        tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+        tex._minFilter = pc.FILTER_LINEAR;
+        tex._magFilter = pc.FILTER_LINEAR;
+
+        stats.lightmapMem += size * size * 4 * 4;
+        stats.lightmapCount++;
+
+        if (!texPool[size]) {
+            var tex2 = new pc.Texture(device, {width:size,
+                                      height:size,
+                                      format:pc.PIXELFORMAT_R8_G8_B8_A8,
+                                      autoMipmap:false,
+                                      rgbm:true});
+            tex2.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+            tex2.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+            tex2._minFilter = pc.FILTER_LINEAR;
+            tex2._magFilter = pc.FILTER_LINEAR;
+            var targ2 = new pc.RenderTarget(device, tex2, {
+                depth: false
+            });
+            texPool[size] = targ2;
+        }
+
+        return tex;
+    }
+
 
     var Lightmapper = function (device, root, scene, renderer, assets) {
         this.device = device;
@@ -142,7 +239,7 @@ pc.extend(pc, function () {
                 target: this
             });
 
-            var i, j;
+            var i, j, k;
             var id;
             var device = this.device;
             var scene = this.scene;
@@ -188,48 +285,69 @@ pc.extend(pc, function () {
                 collectModels(this.root, null, null, allNodes);
             }
 
-            stats.lightmapCount = nodes.length;
-
             // Calculate lightmap sizes and allocate textures
             var texSize = [];
+            var atlasableNodes = [];
             var lmaps = [];
             var texPool = {};
             var size;
             var tex;
-            var instances;
             for(i=0; i<nodes.length; i++) {
                 size = this.calculateLightmapSize(nodes[i], nodesMeshInstances[i]);
                 texSize.push(size);
 
-                tex = new pc.Texture(device, {width:size,
-                                              height:size,
-                                              format:pc.PIXELFORMAT_R8_G8_B8_A8,
-                                              autoMipmap:false,
-                                              rgbm:true});
-                tex.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
-                tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
-                tex._minFilter = pc.FILTER_LINEAR;
-                tex._magFilter = pc.FILTER_LINEAR;
-                lmaps.push(tex);
-
-                stats.lightmapMem += size * size * 4 * 4;
-
-                if (!texPool[size]) {
-                    var tex2 = new pc.Texture(device, {width:size,
-                                              height:size,
-                                              format:pc.PIXELFORMAT_R8_G8_B8_A8,
-                                              autoMipmap:false,
-                                              rgbm:true});
-                    tex2.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
-                    tex2.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
-                    tex2._minFilter = pc.FILTER_LINEAR;
-                    tex2._magFilter = pc.FILTER_LINEAR;
-                    var targ2 = new pc.RenderTarget(device, tex2, {
-                        depth: false
-                    });
-                    texPool[size] = targ2;
+                if (size <= maxAtlasableSize) {
+                    atlasableNodes.push(i);
+                } else {
+                    tex = allocateTexture(device, size, stats, texPool);
+                    lmaps[i] = tex;
                 }
             }
+
+            var currentAtlasId = 0;
+            var texAtlasId = [];
+            var texAtlasScaleOffset = [];
+            var texAtlasCount = [];
+            var texAtlasArea = [];
+            atlasableNodes.sort(function(a, b){ // sort from larger to smaller
+                return texSize[b] - texSize[a];
+            });
+            var root = {aabb:{x:0,y:0,z:atlasSize,w:atlasSize}, id:-1, child:[], leaf:true};
+            texAtlasCount[0] = 0;
+            texAtlasArea[0] = 0;
+            var nodeId;
+            var nodeAtlasObj;
+            for(i=0; i<atlasableNodes.length; i++) {
+                nodeId = atlasableNodes[i];
+                nodeAtlasObj = insertToAtlas(root, i, {x:0,y:0,z:texSize[nodeId],w:texSize[nodeId]});
+                if (!nodeAtlasObj) {
+                    currentAtlasId++;
+                    root = {aabb:{x:0,y:0,z:atlasSize,w:atlasSize}, id:-1, child:[], leaf:true};
+                    texAtlasCount[currentAtlasId] = 0;
+                    texAtlasArea[currentAtlasId] = 0;
+                    nodeAtlasObj = insertToAtlas(root, i, {x:0,y:0,z:texSize[nodeId],w:texSize[nodeId]});
+                }
+                if (nodeAtlasObj) {
+                    texAtlasId[nodeId] = currentAtlasId;
+                    texAtlasScaleOffset[nodeId] =
+                        new pc.Vec4(nodeAtlasObj.aabb.z/atlasSize, nodeAtlasObj.aabb.w/atlasSize, nodeAtlasObj.aabb.x/atlasSize, nodeAtlasObj.aabb.y/atlasSize);
+                    texAtlasCount[currentAtlasId]++;
+                    texAtlasArea[currentAtlasId] += texSize[nodeId] * texSize[nodeId];
+                } else {
+                    console.error("Error inserting to atlas");
+                }
+            }
+            var fullArea = atlasSize * atlasSize;
+            for(i=0; i<currentAtlasId+1; i++) {
+                console.log("Added " + texAtlasCount[i] + " lightmaps into atlas " + i + ", used space: " + (((texAtlasArea[i]/fullArea))*100) + "%");
+                tex = allocateTexture(device, atlasSize, stats, texPool);
+                for(j=0; j<nodes.length; j++) {
+                    if (texAtlasId[j]===i) {
+                        lmaps[j] = tex;
+                    }
+                }
+            }
+
 
             // Collect bakeable lights
             var lights = [];
@@ -263,6 +381,7 @@ pc.extend(pc, function () {
             var dilateShader = chunks.createShaderFromCode(device, chunks.fullscreenQuadVS, dilate, "lmDilate");
             var constantTexSource = device.scope.resolve("source");
             var constantPixelOffset = device.scope.resolve("pixelOffset");
+            var constantUvScaleOffset = device.scope.resolve("uvScaleOffset");
             var i, j;
 
             var lms = {};
@@ -315,6 +434,8 @@ pc.extend(pc, function () {
             var nodeTarg = [];
             var targ, targTmp;
             var light, shadowCam;
+            var pass;
+            var passAtlasId, flags;
 
             scene.updateShadersFunc(device); // needed to initialize skybox once, so it wont pop up during lightmap rendering
 
@@ -342,6 +463,10 @@ pc.extend(pc, function () {
                 lmMaterial.chunks.outputAlphaPremulPS = "\n";
                 lmMaterial.cull = pc.CULLFACE_NONE;
                 lmMaterial.forceUv1 = true; // provide data to xformUv1
+
+                lmMaterial.lightMapTiling = forceTiling;
+                lmMaterial.lightMapOffset = forceOffset;
+
                 lmMaterial.update();
             }
 
@@ -367,6 +492,7 @@ pc.extend(pc, function () {
                     m._shaderDefs &= ~pc.SHADERDEF_LM; // disable LM define, if set, to get bare ambient on first pass
                     m.mask = maskLightmap; // only affected by LM lights
                     m.deleteParameter("texture_lightMap");
+                    m.deleteParameter("texture_lightMapTransform");
 
                     // patch material
                     m.material = lmMaterial;
@@ -412,7 +538,16 @@ pc.extend(pc, function () {
                     this.renderer.updateCameraFrustum(shadowCam);
                 }
 
+                for(pass=0; pass<2; pass++) { // currentAtlasId+1
                 for(node=0; node<nodes.length; node++) {
+
+                    passAtlasId = texAtlasId[node];
+                    if (passAtlasId===undefined) passAtlasId = currentAtlasId;
+                    if (passAtlasId!==pass) continue;
+
+                    flags = null;
+                    if (pass===currentAtlasId || node===0) flags = pc.CLEARFLAG_COLOR;
+                    lmCamera.setClearOptions({color:[0.0, 0.0, 0.0, 0.0], depth:1, flags:flags});
 
                     rcv = nodesMeshInstances[node];
                     lm = lmaps[node];
@@ -460,6 +595,8 @@ pc.extend(pc, function () {
                         }
                     }
 
+                    constantUvScaleOffset.setValue(texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+
                     // ping-ponging output
                     lmCamera.setRenderTarget(targTmp);
 
@@ -467,15 +604,32 @@ pc.extend(pc, function () {
                     this.renderer.render(scene, lmCamera);
                     stats.renderPasses++;
 
-                    lmaps[node] = texTmp;
+                    /*lmaps[node] = texTmp;
                     nodeTarg[node] = targTmp;
+                    texPool[lm.width] = targ;*/
+
+                    for(j=0; j<nodes.length; j++) {
+                        if (lmaps[j]===lm) {
+                            lmaps[j] = texTmp;
+                            nodeTarg[j] = targTmp;
+                            rcv = nodesMeshInstances[j];
+                            for(k=0; k<rcv.length; k++) {
+                                m = rcv[k];
+                                m.setParameter("texture_lightMap", texTmp); // ping-ponging input
+                                m.setParameter("texture_lightMapTransform",
+                                    texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+                                m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
+                            }
+                        }
+                    }
                     texPool[lm.width] = targ;
 
-                    for(j=0; j<rcv.length; j++) {
+                    /*for(j=0; j<rcv.length; j++) {
                         m = rcv[j];
                         m.setParameter("texture_lightMap", texTmp); // ping-ponging input
                         m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
-                    }
+                    }*/
+                }
                 }
 
                 lights[i].setEnabled(false); // disable that light
@@ -492,7 +646,7 @@ pc.extend(pc, function () {
                 targTmp = texPool[lm.width];
                 texTmp = targTmp.colorBuffer;
 
-                // Dilate
+                /*// Dilate
                 var numDilates2x = 4; // 8 dilates
                 var pixelOffset = new pc.Vec2(1/lm.width, 1/lm.height);
                 constantPixelOffset.setValue(pixelOffset.data);
@@ -502,7 +656,7 @@ pc.extend(pc, function () {
 
                     constantTexSource.setValue(texTmp);
                     pc.drawQuadWithShader(device, targ, dilateShader);
-                }
+                }*/
 
 
                 for(i=0; i<rcv.length; i++) {
@@ -514,6 +668,8 @@ pc.extend(pc, function () {
 
                     // Set lightmap
                     rcv[i].setParameter("texture_lightMap", lm);
+                    rcv[i].setParameter("texture_lightMapTransform",
+                        texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
 
                     id++;
                 }
