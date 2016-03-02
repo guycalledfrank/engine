@@ -521,6 +521,7 @@ pc.extend(pc, function () {
 
             // Accumulate lights into RGBM textures
             for(i=0; i<lights.length; i++) {
+
                 lights[i].setEnabled(true); // enable next light
                 lights[i]._cacheShadowMap = true;
                 if (lights[i].getType()!==pc.LIGHTTYPE_DIRECTIONAL) {
@@ -548,7 +549,7 @@ pc.extend(pc, function () {
                     this.renderer.updateCameraFrustum(shadowCam);
                 }
 
-                for(pass=0; pass<1; pass++) { // currentAtlasId+1
+                for(pass=0; pass<currentAtlasId+1; pass++) {
                     firstNode = true;
                 for(node=0; node<nodes.length; node++) {
 
@@ -564,6 +565,10 @@ pc.extend(pc, function () {
                     texTmp = targTmp.colorBuffer;
                     scene.drawCalls = [];
                     for(j=0; j<rcv.length; j++) {
+
+                        rcv[j].setParameter("texture_lightMapTransform",
+                            texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+
                         scene.drawCalls.push(rcv[j]);
                     }
                     scene.updateShaders = true;
@@ -639,13 +644,14 @@ pc.extend(pc, function () {
                             for(k=0; k<rcv.length; k++) {
                                 m = rcv[k];
                                 m.setParameter("texture_lightMap", texTmp); // ping-ponging input
-                                m.setParameter("texture_lightMapTransform",
-                                    texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
                                 m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
                             }
                         }
                     }
                     texPool[lm.width] = targ;
+
+                    if (!pc.lm) pc.lm = [];
+                    pc.lm[pass] = texTmp;
 
                     /*for(j=0; j<rcv.length; j++) {
                         m = rcv[j];
@@ -669,7 +675,7 @@ pc.extend(pc, function () {
                 targTmp = texPool[lm.width];
                 texTmp = targTmp.colorBuffer;
 
-                /*// Dilate
+                // Dilate
                 var numDilates2x = 4; // 8 dilates
                 var pixelOffset = new pc.Vec2(1/lm.width, 1/lm.height);
                 constantPixelOffset.setValue(pixelOffset.data);
@@ -679,7 +685,7 @@ pc.extend(pc, function () {
 
                     constantTexSource.setValue(texTmp);
                     pc.drawQuadWithShader(device, targ, dilateShader);
-                }*/
+                }
 
 
                 for(i=0; i<rcv.length; i++) {
