@@ -617,8 +617,8 @@ pc.extend(pc, function () {
                     //lmCamera.setClearOptions({color:[0.0, 0.0, 0.0, 0.0], depth:1, flags:flags});
                     firstNode = false;
 
-                    if (flags) console.log("Clear " + texTmp.name);
-                    console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
+                    //if (flags) console.log("Clear " + texTmp.name);
+                    //console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
 
                     if (flags) {
                         constantTexSource.setValue(lm);
