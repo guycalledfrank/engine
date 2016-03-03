@@ -228,10 +228,6 @@ pc.extend(pc, function () {
             totalArea /= area.uv;
             totalArea = Math.sqrt(totalArea);
 
-            //if (nodesMeshInstances) {
-              //  totalArea *= nodesMeshInstances.length / node.model.model.meshInstances.length; // very approximate
-            //}
-
             return Math.min(pc.math.nextPowerOfTwo(totalArea * sizeMult), this.scene.lightmapMaxResolution || maxSize);
         },
 
@@ -445,7 +441,7 @@ pc.extend(pc, function () {
             var targ, targTmp;
             var light, shadowCam;
             var pass;
-            var passAtlasId, flags;
+            var passAtlasId, needToCopyPrevContent, needToClear;
 
             scene.updateShadersFunc(device); // needed to initialize skybox once, so it wont pop up during lightmap rendering
 
@@ -458,6 +454,7 @@ pc.extend(pc, function () {
                 }
             }
 
+            // Create LM material
             if (!lmMaterial) {
                 lmMaterial = new pc.PhongMaterial();
                 lmMaterial.chunks.transformVS = xformUv1; // draw UV1
@@ -480,6 +477,7 @@ pc.extend(pc, function () {
                 lmMaterial.update();
             }
 
+            // Prepare nodes
             for(node=0; node<nodes.length; node++) {
                 rcv = nodesMeshInstances[node];
                 lm = lmaps[node];
@@ -524,6 +522,8 @@ pc.extend(pc, function () {
 
                 lights[i].setEnabled(true); // enable next light
                 lights[i]._cacheShadowMap = true;
+
+                // calculate bounds of local light for culling
                 if (lights[i].getType()!==pc.LIGHTTYPE_DIRECTIONAL) {
                     lights[i]._node.getWorldTransform();
                     lights[i].getBoundingSphere(tempSphere);
@@ -532,6 +532,8 @@ pc.extend(pc, function () {
                     lightBounds.halfExtents.y = tempSphere.radius;
                     lightBounds.halfExtents.z = tempSphere.radius;
                 }
+
+                // calculate spot frustum for better culling
                 if (lights[i].getType()===pc.LIGHTTYPE_SPOT) {
                     light = lights[i];
                     shadowCam = this.renderer.getShadowCamera(device, light);
@@ -549,116 +551,148 @@ pc.extend(pc, function () {
                     this.renderer.updateCameraFrustum(shadowCam);
                 }
 
+                // Update atlases first (pass = atlasId; final pass is anything non-atlased)
                 for(pass=0; pass<currentAtlasId+1; pass++) {
                     firstNode = true;
-                for(node=0; node<nodes.length; node++) {
+                    for(node=0; node<nodes.length; node++) {
 
-                    passAtlasId = texAtlasId[node];
-                    if (passAtlasId===undefined) passAtlasId = currentAtlasId;
-                    if (passAtlasId!==pass) continue;
+                        passAtlasId = texAtlasId[node];
+                        if (passAtlasId===undefined) passAtlasId = currentAtlasId;
+                        if (passAtlasId!==pass) continue; // filter nodes by atlas ID of the pass
 
-                    rcv = nodesMeshInstances[node];
-                    lm = lmaps[node];
-                    bounds = nodeBounds[node];
-                    targ = nodeTarg[node];
-                    targTmp = texPool[lm.width];
-                    texTmp = targTmp.colorBuffer;
-                    scene.drawCalls = [];
-                    for(j=0; j<rcv.length; j++) {
+                        rcv = nodesMeshInstances[node];
+                        lm = lmaps[node];
+                        bounds = nodeBounds[node];
+                        targ = nodeTarg[node];
+                        targTmp = texPool[lm.width];
+                        texTmp = targTmp.colorBuffer;
 
-                        rcv[j].setParameter("texture_lightMapTransform",
-                            texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+                        // Tweak camera to fully see the model, so directional light frustum will also see it
+                        if (lights[i].getType()===pc.LIGHTTYPE_DIRECTIONAL) {
+                            tempVec.copy(bounds.center);
+                            tempVec.y += bounds.halfExtents.y;
 
-                        scene.drawCalls.push(rcv[j]);
-                    }
-                    scene.updateShaders = true;
+                            lmCamera._node.setPosition(tempVec);
+                            lmCamera._node.setEulerAngles(-90, 0, 0);
 
-                    // Tweak camera to fully see the model, so directional light frustum will also see it
-                    if (lights[i].getType()===pc.LIGHTTYPE_DIRECTIONAL) {
-                        tempVec.copy(bounds.center);
-                        tempVec.y += bounds.halfExtents.y;
+                            var frustumSize = Math.max(bounds.halfExtents.x, bounds.halfExtents.z);
 
-                        lmCamera._node.setPosition(tempVec);
-                        lmCamera._node.setEulerAngles(-90, 0, 0);
-
-                        var frustumSize = Math.max(bounds.halfExtents.x, bounds.halfExtents.z);
-
-                        lmCamera.setProjection( pc.PROJECTION_ORTHOGRAPHIC );
-                        lmCamera.setNearClip( 0 );
-                        lmCamera.setFarClip( bounds.halfExtents.y * 2 );
-                        lmCamera.setAspectRatio( 1 );
-                        lmCamera.setOrthoHeight( frustumSize );
-                    } else {
-                        if (!lightBounds.intersects(bounds)) {
-                            continue;
+                            lmCamera.setProjection( pc.PROJECTION_ORTHOGRAPHIC );
+                            lmCamera.setNearClip( 0 );
+                            lmCamera.setFarClip( bounds.halfExtents.y * 2 );
+                            lmCamera.setAspectRatio( 1 );
+                            lmCamera.setOrthoHeight( frustumSize );
+                        } else {
+                            // cull nodes if not affected by light AABB
+                            if (!lightBounds.intersects(bounds)) {
+                                continue;
+                            }
                         }
-                    }
 
-                    if (lights[i].getType()===pc.LIGHTTYPE_SPOT) {
-                        var nodeVisible = false;
+                        if (lights[i].getType()===pc.LIGHTTYPE_SPOT) {
+                            // cull nodes if not affected by spotlight's frustum
+                            var nodeVisible = false;
+                            for(j=0; j<rcv.length; j++) {
+                                if (this.renderer._isVisible(shadowCam, rcv[j])) {
+                                    nodeVisible = true;
+                                    break;
+                                }
+                            }
+                            if (!nodeVisible) {
+                                continue;
+                            }
+                        }
+
+                        // Use remaining nodes as draw calls
+                        scene.drawCalls = [];
+                        var fuck = false;
                         for(j=0; j<rcv.length; j++) {
-                            if (this.renderer._isVisible(shadowCam, rcv[j])) {
-                                nodeVisible = true;
-                                break;
+
+                            rcv[j].setParameter("texture_lightMapTransform",
+                                texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+
+                            //if (rcv[j].node.name==="CafeTable06") console.log(i+" "+pass);
+                            //if (rcv[j].node.name!=="CafeTable06") continue;
+                            //if (rcv[j].node.name.substr(0,9)==="CafeTable") console.log(rcv[j].node.name+" "+i+" "+pass);
+                            //if (rcv[j].node.name.substr(0,9)!=="CafeTable") continue;
+
+                            //if (rcv[j].node.name==="CafeTable06" || rcv[j].node.name==="CafeTable04") console.log(rcv[j].node.name+" "+i+" "+pass);
+                            //if (rcv[j].node.name!=="CafeTable06" && rcv[j].node.name!=="CafeTable04") continue;
+                            //if (rcv[j].node.name==="CafeTable04") fuck = true;
+                            //if (fuck) continue;
+
+                            scene.drawCalls.push(rcv[j]);
+                        }
+                        if (scene.drawCalls.length===0) continue;
+                        scene.updateShaders = true;
+
+                        constantUvScaleOffset.setValue(texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
+
+
+                       //console.log("Baking light "+lights[i]._node.name + " on model " + nodes[node].name);
+
+                       needToCopyPrevContent = pass===currentAtlasId || firstNode;
+                        //needToCopyPrevContent = firstNode;
+                        //needToClear = pass===currentAtlasId;
+                        firstNode = false;
+
+                        if (needToCopyPrevContent) console.log("Copy to " + texTmp.name);
+                        console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
+
+                        if (needToCopyPrevContent) {
+                            constantTexSource.setValue(lm);
+                            device.setColorWrite(true, true, true, true);
+                            pc.drawQuadWithShader(device, targTmp, copyImageShader, rect);
+                        }
+
+                        lmCamera.setClearOptions({color:[0.0, 0.0, 0.0, 0.0], depth:1, flags:(needToClear? pc.CLEARFLAG_COLOR : null)});
+
+                        // ping-ponging output
+                        lmCamera.setRenderTarget(targTmp);
+
+                        this.renderer.render(scene, lmCamera);
+                        stats.renderPasses++;
+
+                        /*lmaps[node] = texTmp;
+                        nodeTarg[node] = targTmp;
+                        texPool[lm.width] = targ;*/
+
+                        for(j=0; j<nodes.length; j++) {
+
+                            /*if (lmaps[j]===texTmp) {
+                                lmaps[j] = lm;
+                                nodeTarg[j] = nodeTarg[node];
+                                rcv = nodesMeshInstances[j];
+                                for(k=0; k<rcv.length; k++) {
+                                    m = rcv[k];
+                                    m.setParameter("texture_lightMap", lm);
+                                    m._shaderDefs |= pc.SHADERDEF_LM;
+                                }
+                            }*/
+
+                            if (lmaps[j]===lm) {
+                                lmaps[j] = texTmp;
+                                nodeTarg[j] = targTmp;
+                                rcv = nodesMeshInstances[j];
+                                for(k=0; k<rcv.length; k++) {
+                                    m = rcv[k];
+                                    m.setParameter("texture_lightMap", texTmp); // ping-ponging input
+                                    m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
+                                }
                             }
                         }
-                        if (!nodeVisible) {
-                            continue;
-                        }
+                        texPool[lm.width] = targ;
+
+                        if (!pc.lm) pc.lm = [];
+                        pc.lm[pass] = texTmp;
+                        if (pass<currentAtlasId) pc.lm[0] = lm;
+
+                        /*for(j=0; j<rcv.length; j++) {
+                            m = rcv[j];
+                            m.setParameter("texture_lightMap", texTmp); // ping-ponging input
+                            m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
+                        }*/
                     }
-
-                    constantUvScaleOffset.setValue(texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
-
-
-                   //console.log("Baking light "+lights[i]._node.name + " on model " + nodes[node].name);
-
-                    flags = null;
-                    if (pass===currentAtlasId || firstNode) flags = pc.CLEARFLAG_COLOR;
-                    //lmCamera.setClearOptions({color:[0.0, 0.0, 0.0, 0.0], depth:1, flags:flags});
-                    firstNode = false;
-
-                    //if (flags) console.log("Clear " + texTmp.name);
-                    //console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
-
-                    if (flags) {
-                        constantTexSource.setValue(lm);
-                        device.setColorWrite(true, true, true, true);
-                        pc.drawQuadWithShader(device, targTmp, copyImageShader, rect);
-                    }
-
-                    // ping-ponging output
-                    lmCamera.setRenderTarget(targTmp);
-
-                    this.renderer.render(scene, lmCamera);
-                    stats.renderPasses++;
-
-                    /*lmaps[node] = texTmp;
-                    nodeTarg[node] = targTmp;
-                    texPool[lm.width] = targ;*/
-
-                    for(j=0; j<nodes.length; j++) {
-                        if (lmaps[j]===lm) {
-                            lmaps[j] = texTmp;
-                            nodeTarg[j] = targTmp;
-                            rcv = nodesMeshInstances[j];
-                            for(k=0; k<rcv.length; k++) {
-                                m = rcv[k];
-                                m.setParameter("texture_lightMap", texTmp); // ping-ponging input
-                                m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
-                            }
-                        }
-                    }
-                    texPool[lm.width] = targ;
-
-                    if (!pc.lm) pc.lm = [];
-                    pc.lm[pass] = texTmp;
-
-                    /*for(j=0; j<rcv.length; j++) {
-                        m = rcv[j];
-                        m.setParameter("texture_lightMap", texTmp); // ping-ponging input
-                        m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
-                    }*/
-                }
                 }
 
                 lights[i].setEnabled(false); // disable that light
@@ -675,7 +709,7 @@ pc.extend(pc, function () {
                 targTmp = texPool[lm.width];
                 texTmp = targTmp.colorBuffer;
 
-                // Dilate
+                /*// Dilate
                 var numDilates2x = 4; // 8 dilates
                 var pixelOffset = new pc.Vec2(1/lm.width, 1/lm.height);
                 constantPixelOffset.setValue(pixelOffset.data);
@@ -685,7 +719,7 @@ pc.extend(pc, function () {
 
                     constantTexSource.setValue(texTmp);
                     pc.drawQuadWithShader(device, targ, dilateShader);
-                }
+                }*/
 
 
                 for(i=0; i<rcv.length; i++) {
