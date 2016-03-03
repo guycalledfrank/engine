@@ -310,6 +310,7 @@ pc.extend(pc, function () {
             var currentAtlasId = 0;
             var texAtlasId = [];
             var texAtlasScaleOffset = [];
+            var texAtlasRect = [];
             var texAtlasCount = [];
             var texAtlasArea = [];
             atlasableNodes.sort(function(a, b){ // sort from larger to smaller
@@ -332,8 +333,14 @@ pc.extend(pc, function () {
                 }
                 if (nodeAtlasObj) {
                     texAtlasId[nodeId] = currentAtlasId;
+
+                    texAtlasRect[nodeId] = {x:nodeAtlasObj.aabb.x/atlasSize, y:nodeAtlasObj.aabb.y/atlasSize,
+                                            z:nodeAtlasObj.aabb.z/atlasSize, w:nodeAtlasObj.aabb.w/atlasSize};
+
                     texAtlasScaleOffset[nodeId] =
-                        new pc.Vec4(nodeAtlasObj.aabb.z/atlasSize, nodeAtlasObj.aabb.w/atlasSize, nodeAtlasObj.aabb.x/atlasSize, nodeAtlasObj.aabb.y/atlasSize);
+                        new pc.Vec4(nodeAtlasObj.aabb.z/atlasSize, nodeAtlasObj.aabb.w/atlasSize,
+                                    nodeAtlasObj.aabb.x/atlasSize, nodeAtlasObj.aabb.y/atlasSize);
+
                     texAtlasCount[currentAtlasId]++;
                     texAtlasArea[currentAtlasId] += texSize[nodeId] * texSize[nodeId];
                 } else {
@@ -555,6 +562,7 @@ pc.extend(pc, function () {
                 for(pass=0; pass<currentAtlasId+1; pass++) {
                     firstNode = true;
                     for(node=0; node<nodes.length; node++) {
+                        //if (pass!==11) continue;
 
                         passAtlasId = texAtlasId[node];
                         if (passAtlasId===undefined) passAtlasId = currentAtlasId;
@@ -636,7 +644,7 @@ pc.extend(pc, function () {
                         //needToClear = pass===currentAtlasId;
                         firstNode = false;
 
-                        if (needToCopyPrevContent) console.log("Copy to " + texTmp.name);
+                        if (needToCopyPrevContent) console.log("Copy from " + lm.name + " to " + texTmp.name);
                         console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
 
                         if (needToCopyPrevContent) {
@@ -648,6 +656,11 @@ pc.extend(pc, function () {
                         lmCamera.setClearOptions({color:[0.0, 0.0, 0.0, 0.0], depth:1, flags:(needToClear? pc.CLEARFLAG_COLOR : null)});
 
                         // ping-ponging output
+                        if (texAtlasId[node]!==undefined) {
+                            lmCamera.setRect(texAtlasRect[node].x, texAtlasRect[node].y, texAtlasRect[node].z, texAtlasRect[node].w);
+                        } else {
+                            lmCamera.setRect(0, 0, 1, 1);
+                        }
                         lmCamera.setRenderTarget(targTmp);
 
                         this.renderer.render(scene, lmCamera);
