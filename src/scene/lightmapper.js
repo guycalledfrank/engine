@@ -182,7 +182,7 @@ pc.extend(pc, function () {
             lightmapMem: 0,
             renderTime: 0,
             shadersLinked: 0,
-            texCopyCount: 0
+            pixelsFilledByQuads: 0
         };
     };
 
@@ -250,7 +250,7 @@ pc.extend(pc, function () {
             rect.w = atlasSize;
 
             stats.renderPasses = 0;
-            stats.texCopyCount = 0;
+            stats.pixelsFilledByQuads = 0;
             var startShaders = device._shaderStats.linked;
 
             var allNodes = [];
@@ -613,9 +613,9 @@ pc.extend(pc, function () {
                             }
                         }
 
-                        // Use remaining nodes as draw calls TODO: cull
+                        // Use remaining nodes as draw calls
+                        // TODO: cull receivers per meshInstance
                         scene.drawCalls = [];
-                        var fuck = false;
                         for(j=0; j<rcv.length; j++) {
 
                             rcv[j].setParameter("texture_lightMapTransform",
@@ -640,7 +640,7 @@ pc.extend(pc, function () {
                         console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
 
                         if (needToCopyPrevContent) {
-                            stats.texCopyCount++;
+                            stats.pixelsFilledByQuads += atlasSize * atlasSize;
                             constantTexSource.setValue(lm);
                             device.setColorWrite(true, true, true, true);
                             pc.drawQuadWithShader(device, targTmp, copyImageShader, rect);
@@ -676,8 +676,11 @@ pc.extend(pc, function () {
                             texPool[lm.width] = targ;
 
                             if (!pc.lm) pc.lm = [];
-                            pc.lm[pass] = texTmp;
-                            if (pass<currentAtlasId) pc.lm[0] = lm;
+                            if (pass < currentAtlasId) {
+                                pc.lm[pass] = texTmp;
+                            } else {
+                                pc.lm[pass + node] = texTmp;
+                            }
                         }
 
                     }
@@ -699,8 +702,11 @@ pc.extend(pc, function () {
                         texPool[lm.width] = targ;
 
                         if (!pc.lm) pc.lm = [];
-                        pc.lm[pass] = texTmp;
-                        if (pass<currentAtlasId) pc.lm[0] = lm;
+                        if (pass < currentAtlasId) {
+                            pc.lm[pass] = texTmp;
+                        } else {
+                            //pc.lm.push(texTmp);
+                        }
                     }
 
                 }
@@ -729,6 +735,8 @@ pc.extend(pc, function () {
 
                     constantTexSource.setValue(texTmp);
                     pc.drawQuadWithShader(device, targ, dilateShader);
+
+                    stats.pixelsFilledByQuads += lm.width * lm.height * 2;
                 }
 
 
