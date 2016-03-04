@@ -635,11 +635,11 @@ pc.extend(pc, function () {
 
                         needToCopyPrevContent = (pass===currentAtlasId || firstNode) && lm._used;
                         //needToCopyPrevContent = firstNode;
-                        //needToClear = pass===currentAtlasId;
+                        needToClear = pass===currentAtlasId;
                         firstNode = false;
 
-                        if (needToCopyPrevContent) console.log("Copy from " + lm.name + " to " + texTmp.name);
-                        console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
+                        //if (needToCopyPrevContent) console.log("Copy from " + lm.name + " to " + texTmp.name);
+                        //console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
 
                         if (needToCopyPrevContent) {
                             stats.pixelsFilledByQuads += atlasSize * atlasSize;
