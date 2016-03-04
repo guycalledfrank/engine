@@ -181,7 +181,8 @@ pc.extend(pc, function () {
             lightmapCount: 0,
             lightmapMem: 0,
             renderTime: 0,
-            shadersLinked: 0
+            shadersLinked: 0,
+            texCopyCount: 0
         };
     };
 
@@ -249,6 +250,7 @@ pc.extend(pc, function () {
             rect.w = atlasSize;
 
             stats.renderPasses = 0;
+            stats.texCopyCount = 0;
             var startShaders = device._shaderStats.linked;
 
             var allNodes = [];
@@ -619,16 +621,6 @@ pc.extend(pc, function () {
                             rcv[j].setParameter("texture_lightMapTransform",
                                 texAtlasId[node]!==undefined? texAtlasScaleOffset[node].data : identityMapTransform.data);
 
-                            //if (rcv[j].node.name==="CafeTable06") console.log(i+" "+pass);
-                            //if (rcv[j].node.name!=="CafeTable06") continue;
-                            //if (rcv[j].node.name.substr(0,9)==="CafeTable") console.log(rcv[j].node.name+" "+i+" "+pass);
-                            //if (rcv[j].node.name.substr(0,9)!=="CafeTable") continue;
-
-                            //if (rcv[j].node.name==="CafeTable06" || rcv[j].node.name==="CafeTable04") console.log(rcv[j].node.name+" "+i+" "+pass);
-                            //if (rcv[j].node.name!=="CafeTable06" && rcv[j].node.name!=="CafeTable04") continue;
-                            //if (rcv[j].node.name==="CafeTable04") fuck = true;
-                            //if (fuck) continue;
-
                             scene.drawCalls.push(rcv[j]);
                         }
                         if (scene.drawCalls.length===0) continue;
@@ -648,6 +640,7 @@ pc.extend(pc, function () {
                         console.log("Render light" + i + " " + lm.name + " -> " + texTmp.name);
 
                         if (needToCopyPrevContent) {
+                            stats.texCopyCount++;
                             constantTexSource.setValue(lm);
                             device.setColorWrite(true, true, true, true);
                             pc.drawQuadWithShader(device, targTmp, copyImageShader, rect);
@@ -666,16 +659,27 @@ pc.extend(pc, function () {
                         this.renderer.render(scene, lmCamera);
                         stats.renderPasses++;
 
-                        /*lmaps[node] = texTmp;
-                        nodeTarg[node] = targTmp;
-                        texPool[lm.width] = targ;*/
+                        if (pass===currentAtlasId) {
+                            for(j=0; j<nodes.length; j++) {
 
+                                if (lmaps[j]===lm) {
+                                    lmaps[j] = texTmp;
+                                    nodeTarg[j] = targTmp;
+                                    rcv = nodesMeshInstances[j];
+                                    for(k=0; k<rcv.length; k++) {
+                                        m = rcv[k];
+                                        m.setParameter("texture_lightMap", texTmp); // ping-ponging input
+                                        m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
+                                    }
+                                }
+                            }
+                            texPool[lm.width] = targ;
 
-                        /*for(j=0; j<rcv.length; j++) {
-                            m = rcv[j];
-                            m.setParameter("texture_lightMap", texTmp); // ping-ponging input
-                            m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
-                        }*/
+                            if (!pc.lm) pc.lm = [];
+                            pc.lm[pass] = texTmp;
+                            if (pass<currentAtlasId) pc.lm[0] = lm;
+                        }
+
                     }
 
                     if (!firstNode) { //needToCopyPrevContent) {
@@ -715,7 +719,7 @@ pc.extend(pc, function () {
                 targTmp = texPool[lm.width];
                 texTmp = targTmp.colorBuffer;
 
-                /*// Dilate
+                // Dilate
                 var numDilates2x = 4; // 8 dilates
                 var pixelOffset = new pc.Vec2(1/lm.width, 1/lm.height);
                 constantPixelOffset.setValue(pixelOffset.data);
@@ -725,7 +729,7 @@ pc.extend(pc, function () {
 
                     constantTexSource.setValue(texTmp);
                     pc.drawQuadWithShader(device, targ, dilateShader);
-                }*/
+                }
 
 
                 for(i=0; i<rcv.length; i++) {
