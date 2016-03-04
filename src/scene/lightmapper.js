@@ -611,7 +611,7 @@ pc.extend(pc, function () {
                             }
                         }
 
-                        // Use remaining nodes as draw calls
+                        // Use remaining nodes as draw calls TODO: cull
                         scene.drawCalls = [];
                         var fuck = false;
                         for(j=0; j<rcv.length; j++) {
@@ -639,7 +639,7 @@ pc.extend(pc, function () {
 
                        //console.log("Baking light "+lights[i]._node.name + " on model " + nodes[node].name);
 
-                       needToCopyPrevContent = pass===currentAtlasId || firstNode;
+                        needToCopyPrevContent = pass===currentAtlasId || firstNode;
                         //needToCopyPrevContent = firstNode;
                         //needToClear = pass===currentAtlasId;
                         firstNode = false;
@@ -670,18 +670,16 @@ pc.extend(pc, function () {
                         nodeTarg[node] = targTmp;
                         texPool[lm.width] = targ;*/
 
-                        for(j=0; j<nodes.length; j++) {
 
-                            /*if (lmaps[j]===texTmp) {
-                                lmaps[j] = lm;
-                                nodeTarg[j] = nodeTarg[node];
-                                rcv = nodesMeshInstances[j];
-                                for(k=0; k<rcv.length; k++) {
-                                    m = rcv[k];
-                                    m.setParameter("texture_lightMap", lm);
-                                    m._shaderDefs |= pc.SHADERDEF_LM;
-                                }
-                            }*/
+                        /*for(j=0; j<rcv.length; j++) {
+                            m = rcv[j];
+                            m.setParameter("texture_lightMap", texTmp); // ping-ponging input
+                            m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
+                        }*/
+                    }
+
+                    if (!firstNode) { //needToCopyPrevContent) {
+                        for(j=0; j<nodes.length; j++) {
 
                             if (lmaps[j]===lm) {
                                 lmaps[j] = texTmp;
@@ -699,13 +697,8 @@ pc.extend(pc, function () {
                         if (!pc.lm) pc.lm = [];
                         pc.lm[pass] = texTmp;
                         if (pass<currentAtlasId) pc.lm[0] = lm;
-
-                        /*for(j=0; j<rcv.length; j++) {
-                            m = rcv[j];
-                            m.setParameter("texture_lightMap", texTmp); // ping-ponging input
-                            m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
-                        }*/
                     }
+
                 }
 
                 lights[i].setEnabled(false); // disable that light
