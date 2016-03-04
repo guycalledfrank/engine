@@ -147,6 +147,7 @@ pc.extend(pc, function () {
         stats.lightmapCount++;
 
         tex.name = name;
+        tex._used = false;
 
         if (!texPool[size]) {
             var tex2 = new pc.Texture(device, {width:size,
@@ -162,6 +163,7 @@ pc.extend(pc, function () {
             var targ2 = new pc.RenderTarget(device, tex2, {
                 depth: false
             });
+            tex2._used = false;
             texPool[size] = targ2;
         }
 
@@ -631,7 +633,7 @@ pc.extend(pc, function () {
 
                        //console.log("Baking light "+lights[i]._node.name + " on model " + nodes[node].name);
 
-                        needToCopyPrevContent = pass===currentAtlasId || firstNode;
+                        needToCopyPrevContent = (pass===currentAtlasId || firstNode) && lm._used;
                         //needToCopyPrevContent = firstNode;
                         //needToClear = pass===currentAtlasId;
                         firstNode = false;
@@ -657,6 +659,7 @@ pc.extend(pc, function () {
                         lmCamera.setRenderTarget(targTmp);
 
                         this.renderer.render(scene, lmCamera);
+                        texTmp._used = true;
                         stats.renderPasses++;
 
                         if (pass===currentAtlasId) {
