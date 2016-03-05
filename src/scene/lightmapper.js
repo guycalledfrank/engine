@@ -3,6 +3,8 @@ pc.extend(pc, function () {
     var maxSize = 2048;
     var atlasSize = 1024;
     var maxAtlasableSize = 512;
+    var padding = 1;
+    var minTexSize = 4;
     var maskDynamic = 1;
     var maskBaked = 2;
     var maskLightmap = 4;
@@ -301,6 +303,7 @@ pc.extend(pc, function () {
             var tex;
             for(i=0; i<nodes.length; i++) {
                 size = this.calculateLightmapSize(nodes[i], nodesMeshInstances[i]);
+                size = Math.max(size, minTexSize);
                 texSize.push(size);
 
                 if (size <= maxAtlasableSize) {
@@ -338,12 +341,13 @@ pc.extend(pc, function () {
                 if (nodeAtlasObj) {
                     texAtlasId[nodeId] = currentAtlasId;
 
-                    texAtlasRect[nodeId] = {x:nodeAtlasObj.aabb.x/atlasSize, y:nodeAtlasObj.aabb.y/atlasSize,
-                                            z:nodeAtlasObj.aabb.z/atlasSize, w:nodeAtlasObj.aabb.w/atlasSize};
+                    texAtlasRect[nodeId] = {x:(nodeAtlasObj.aabb.x + padding)/atlasSize,
+                                            y:(nodeAtlasObj.aabb.y + padding)/atlasSize,
+                                            z:(nodeAtlasObj.aabb.z - padding*2)/atlasSize,
+                                            w:(nodeAtlasObj.aabb.w - padding*2)/atlasSize};
 
-                    texAtlasScaleOffset[nodeId] =
-                        new pc.Vec4(nodeAtlasObj.aabb.z/atlasSize, nodeAtlasObj.aabb.w/atlasSize,
-                                    nodeAtlasObj.aabb.x/atlasSize, nodeAtlasObj.aabb.y/atlasSize);
+                    texAtlasScaleOffset[nodeId] = new pc.Vec4(texAtlasRect[nodeId].z, texAtlasRect[nodeId].w,
+                                                              texAtlasRect[nodeId].x, texAtlasRect[nodeId].y);
 
                     texAtlasCount[currentAtlasId]++;
                     texAtlasArea[currentAtlasId] += texSize[nodeId] * texSize[nodeId];
@@ -635,7 +639,7 @@ pc.extend(pc, function () {
 
                         needToCopyPrevContent = (pass===currentAtlasId || firstNode) && lm._used;
                         //needToCopyPrevContent = firstNode;
-                        needToClear = pass===currentAtlasId;
+                        needToClear = pass===currentAtlasId || !lm._used;
                         firstNode = false;
 
                         //if (needToCopyPrevContent) console.log("Copy from " + lm.name + " to " + texTmp.name);
