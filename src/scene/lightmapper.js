@@ -4,7 +4,7 @@ pc.extend(pc, function () {
     var maskDynamic = 1;
     var maskBaked = 2;
     var maskLightmap = 4;
-    var bakeDir = false;//true;
+    //var bakeDir = false;//true;
 
     var sceneLightmaps = [];
     var sceneLightmapsNode = [];
@@ -232,7 +232,7 @@ pc.extend(pc, function () {
                     texPool[size] = targ2;
                 }
 
-                if (bakeDir) {
+                /*if (bakeDir) {
                     tex = new pc.Texture(device, {width:size,
                                                   height:size,
                                                   format:pc.PIXELFORMAT_R8_G8_B8_A8,
@@ -244,7 +244,7 @@ pc.extend(pc, function () {
                     tex._magFilter = pc.FILTER_LINEAR;
                     lmapsDir.push(tex);
                     stats.lightmapMem += size * size * 4 * 4;
-                }
+                }*/
             }
 
             // Collect bakeable lights
@@ -338,9 +338,9 @@ pc.extend(pc, function () {
             var nodeTargDir = [];
             var targ, targTmp;
             var light, shadowCam;
-            var renderModes = 1 + (bakeDir? 1 : 0);
+            /*var renderModes = 1 + (bakeDir? 1 : 0);
             var renderMode;
-            var targDir;
+            var targDir;*/
 
             scene.updateShadersFunc(device); // needed to initialize skybox once, so it wont pop up during lightmap rendering
 
@@ -372,7 +372,7 @@ pc.extend(pc, function () {
                 lmMaterial.updateShader(device, scene);
             }
 
-            if (bakeDir && !lmMaterialDir) {
+            /*if (bakeDir && !lmMaterialDir) {
                 lmMaterialDir = new pc.PhongMaterial();
                 lmMaterialDir.chunks.transformVS = xformUv1; // draw UV1
                 lmMaterialDir.chunks.lightDiffuseLambertPS = chunks.bakeLightDirPS;
@@ -390,7 +390,7 @@ pc.extend(pc, function () {
                 lmMaterialDir.cull = pc.CULLFACE_NONE;
                 lmMaterialDir.forceUv1 = true; // provide data to xformUv1
                 lmMaterialDir.update();
-            }
+            }*/
 
             for(node=0; node<nodes.length; node++) {
                 rcv = nodesMeshInstances[node];
@@ -423,12 +423,12 @@ pc.extend(pc, function () {
                 });
                 nodeTarg.push(targ);
 
-                if (bakeDir) {
+                /*if (bakeDir) {
                     targDir = new pc.RenderTarget(device, lmapsDir[node], {
                         depth: false
                     });
                     nodeTargDir.push(targDir);
-                }
+                }*/
             }
 
             var renderMaterial = [lmMaterial, lmMaterialDir];
@@ -562,7 +562,7 @@ pc.extend(pc, function () {
                     pc.drawQuadWithShader(device, targ, dilateShader);
                 }
 
-                if (bakeDir) {
+                /*if (bakeDir) {
                     lmDir = lmapsDir[node];
                     targDir = nodeTargDir[node];
                     for(i=0; i<numDilates2x; i++) {
@@ -572,7 +572,7 @@ pc.extend(pc, function () {
                         constantTexSource.setValue(texTmp);
                         pc.drawQuadWithShader(device, targDir, dilateShader);
                     }
-                }
+                }*/
 
 
                 for(i=0; i<rcv.length; i++) {
@@ -584,7 +584,7 @@ pc.extend(pc, function () {
 
                     // Set lightmap
                     rcv[i].setParameter("texture_lightMap", lm);
-                    if (bakeDir) rcv[i].setParameter("texture_lightMapDir", lmDir);
+                    //if (bakeDir) rcv[i].setParameter("texture_lightMapDir", lmDir);
 
                     id++;
                 }
@@ -592,14 +592,14 @@ pc.extend(pc, function () {
                 sceneLightmaps.push(lm);
                 sceneLightmapsNode.push(nodes[node]);
 
-                if (bakeDir) {
+                /*if (bakeDir) {
                     sceneLightmaps.push(lmDir);
                     sceneLightmapsNode.push(nodes[node]);
-                }
+                }*/
 
                 // Clean up
                 targ.destroy();
-                if (bakeDir) targDir.destroy();
+                //if (bakeDir) targDir.destroy();
             }
 
             for(var key in texPool) {
