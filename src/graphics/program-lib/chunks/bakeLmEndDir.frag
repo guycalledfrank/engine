@@ -1,4 +1,4 @@
 
-gl_FragColor.rgb = data.diffuseLight;
-gl_FragColor.a = 1.0;
+gl_FragColor.rgb = normalize(data.diffuseLight) * 0.5 + 0.5;
+gl_FragColor.a = data.alpha + length(data.diffuseLight);
 

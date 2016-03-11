@@ -376,7 +376,7 @@ pc.extend(pc, function () {
                 lmMaterialDir = new pc.PhongMaterial();
                 lmMaterialDir.chunks.transformVS = xformUv1; // draw UV1
                 lmMaterialDir.chunks.lightDiffuseLambertPS = chunks.bakeLightDirPS;
-                //lmMaterialDir.chunks.lightmapSinglePS = chunks.lightmapSingleDirVisualizePS;
+                lmMaterialDir.chunks.lightmapSinglePS = chunks.lightmapSingleDirVisualizePS;
                 lmMaterialDir.chunks.endPS = chunks.bakeLmEndDir; // encode to RGBM
 
                 // don't bake ambient
@@ -415,6 +415,7 @@ pc.extend(pc, function () {
                     m.mask = maskLightmap; // only affected by LM lights
                     m.deleteParameter("texture_lightMap");
                     m.deleteParameter("texture_lightMapDir");
+                    m.material = lmMaterial;
                 }
 
                 targ = new pc.RenderTarget(device, lm, {
