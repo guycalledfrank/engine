@@ -4,6 +4,7 @@ pc.extend(pc, function () {
     var maskDynamic = 1;
     var maskBaked = 2;
     var maskLightmap = 4;
+    var bakeDir = false;//true;
 
     var sceneLightmaps = [];
     var sceneLightmapsNode = [];
@@ -12,7 +13,7 @@ pc.extend(pc, function () {
     var bounds = new pc.BoundingBox();
     var lightBounds = new pc.BoundingBox();
     var tempSphere = {};
-    var lmMaterial;
+    var lmMaterial, lmMaterialDir;
 
     function collectModels(node, nodes, nodesMeshInstances, allNodes) {
         if (!node.enabled) return;
@@ -193,6 +194,7 @@ pc.extend(pc, function () {
             // Calculate lightmap sizes and allocate textures
             var texSize = [];
             var lmaps = [];
+            var lmapsDir = [];
             var texPool = {};
             var size;
             var tex;
@@ -229,6 +231,20 @@ pc.extend(pc, function () {
                     });
                     texPool[size] = targ2;
                 }
+
+                if (bakeDir) {
+                    tex = new pc.Texture(device, {width:size,
+                                                  height:size,
+                                                  format:pc.PIXELFORMAT_R8_G8_B8_A8,
+                                                  autoMipmap:false,
+                                                  rgbm:false});
+                    tex.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+                    tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+                    tex._minFilter = pc.FILTER_LINEAR;
+                    tex._magFilter = pc.FILTER_LINEAR;
+                    lmapsDir.push(tex);
+                    stats.lightmapMem += size * size * 4 * 4;
+                }
             }
 
             // Collect bakeable lights
@@ -257,7 +273,6 @@ pc.extend(pc, function () {
             // Init shaders
             var chunks = pc.shaderChunks;
             var xformUv1 = chunks.transformUv1VS;
-            var bakeLmEnd = chunks.bakeLmEndPS;
             var dilate = chunks.dilatePS;
 
             var dilateShader = chunks.createShaderFromCode(device, chunks.fullscreenQuadVS, dilate, "lmDilate");
@@ -290,6 +305,7 @@ pc.extend(pc, function () {
 
             var node;
             var lm, rcv, mat;
+            var lmDir;
 
             // Disable existing scene lightmaps
             for(node=0; node<allNodes.length; node++) {
@@ -313,8 +329,12 @@ pc.extend(pc, function () {
             // Prepare models
             var nodeBounds = [];
             var nodeTarg = [];
+            var nodeTargDir = [];
             var targ, targTmp;
             var light, shadowCam;
+            var renderModes = 1 + (bakeDir? 1 : 0);
+            var renderMode;
+            var targDir;
 
             scene.updateShadersFunc(device); // needed to initialize skybox once, so it wont pop up during lightmap rendering
 
@@ -330,7 +350,7 @@ pc.extend(pc, function () {
             if (!lmMaterial) {
                 lmMaterial = new pc.PhongMaterial();
                 lmMaterial.chunks.transformVS = xformUv1; // draw UV1
-                lmMaterial.chunks.endPS = bakeLmEnd; // encode to RGBM
+                lmMaterial.chunks.endPS = chunks.bakeLmEnd; // encode to RGBM
 
                 // don't bake ambient
                 lmMaterial.ambient = new pc.Color(0,0,0);
@@ -343,6 +363,26 @@ pc.extend(pc, function () {
                 lmMaterial.cull = pc.CULLFACE_NONE;
                 lmMaterial.forceUv1 = true; // provide data to xformUv1
                 lmMaterial.update();
+            }
+
+            if (bakeDir && !lmMaterialDir) {
+                lmMaterialDir = new pc.PhongMaterial();
+                lmMaterialDir.chunks.transformVS = xformUv1; // draw UV1
+                lmMaterialDir.chunks.lightDiffuseLambertPS = chunks.bakeLightDirPS;
+                //lmMaterialDir.chunks.lightmapSinglePS = chunks.lightmapSingleDirVisualizePS;
+                lmMaterialDir.chunks.endPS = chunks.bakeLmEndDir; // encode to RGBM
+
+                // don't bake ambient
+                lmMaterialDir.ambient = new pc.Color(0,0,0);
+                lmMaterialDir.ambientTint = true;
+
+                // avoid writing unrelated things to alpha
+                lmMaterialDir.chunks.outputAlphaPS = "\n";
+                lmMaterialDir.chunks.outputAlphaOpaquePS = "\n";
+                lmMaterialDir.chunks.outputAlphaPremulPS = "\n";
+                lmMaterialDir.cull = pc.CULLFACE_NONE;
+                lmMaterialDir.forceUv1 = true; // provide data to xformUv1
+                lmMaterialDir.update();
             }
 
             for(node=0; node<nodes.length; node++) {
@@ -367,16 +407,26 @@ pc.extend(pc, function () {
                     m._shaderDefs &= ~pc.SHADERDEF_LM; // disable LM define, if set, to get bare ambient on first pass
                     m.mask = maskLightmap; // only affected by LM lights
                     m.deleteParameter("texture_lightMap");
-
-                    // patch material
-                    m.material = lmMaterial;
+                    m.deleteParameter("texture_lightMapDir");
                 }
 
                 targ = new pc.RenderTarget(device, lm, {
                     depth: false
                 });
                 nodeTarg.push(targ);
+
+                if (bakeDir) {
+                    targDir = new pc.RenderTarget(device, lmapsDir[node], {
+                        depth: false
+                    });
+                    nodeTargDir.push(targDir);
+                }
             }
+
+            var renderMaterial = [lmMaterial, lmMaterialDir];
+            var renderLmaps = [lmaps, lmapsDir];
+            var renderTarg = [nodeTarg, nodeTargDir];
+            var renderTexName = ["texture_lightMap", "texture_lightMapDir"];
 
             // Disable all bakeable lights
             for(j=0; j<lights.length; j++) {
@@ -477,7 +527,6 @@ pc.extend(pc, function () {
                         m._shaderDefs |= pc.SHADERDEF_LM; // force using LM even if material doesn't have it
                     }
                 }
-
                 lights[i].setEnabled(false); // disable that light
                 lights[i]._cacheShadowMap = false;
             }
@@ -504,6 +553,18 @@ pc.extend(pc, function () {
                     pc.drawQuadWithShader(device, targ, dilateShader);
                 }
 
+                if (bakeDir) {
+                    lmDir = lmapsDir[node];
+                    targDir = nodeTargDir[node];
+                    for(i=0; i<numDilates2x; i++) {
+                        constantTexSource.setValue(lmDir);
+                        pc.drawQuadWithShader(device, targTmp, dilateShader);
+
+                        constantTexSource.setValue(texTmp);
+                        pc.drawQuadWithShader(device, targDir, dilateShader);
+                    }
+                }
+
 
                 for(i=0; i<rcv.length; i++) {
                     m = rcv[i];
@@ -514,6 +575,7 @@ pc.extend(pc, function () {
 
                     // Set lightmap
                     rcv[i].setParameter("texture_lightMap", lm);
+                    if (bakeDir) rcv[i].setParameter("texture_lightMapDir", lmDir);
 
                     id++;
                 }
@@ -521,8 +583,14 @@ pc.extend(pc, function () {
                 sceneLightmaps.push(lm);
                 sceneLightmapsNode.push(nodes[node]);
 
+                if (bakeDir) {
+                    sceneLightmaps.push(lmDir);
+                    sceneLightmapsNode.push(nodes[node]);
+                }
+
                 // Clean up
                 targ.destroy();
+                if (bakeDir) targDir.destroy();
             }
 
             for(var key in texPool) {

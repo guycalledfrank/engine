@@ -185,7 +185,7 @@ pc.programlib.phong = {
         if (chunks.extensionVS) {
         	code += chunks.extensionVS + "\n";
         }
-        
+
         code += chunks.baseVS;
 
         // Allow first shadow coords to be computed in VS
@@ -679,7 +679,6 @@ pc.programlib.phong = {
                     }
                 }
 
-                code += "   data.atten *= getLightDiffuse(data);\n";
                 if (light.getCastShadows() && !options.noShadow) {
 
                     var shadowReadMode = null;
@@ -709,6 +708,7 @@ pc.programlib.phong = {
                     }
                 }
 
+                code += "   data.atten *= getLightDiffuse(data);\n";
                 code += "   data.diffuseLight += data.atten * light"+i+"_color;\n";
 
                 if (options.useSpecular) {
