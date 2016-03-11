@@ -318,6 +318,7 @@ pc.extend(pc, function () {
                 rcv = allNodes[node].model.model.meshInstances;
                 for(i=0; i<rcv.length; i++) {
                     rcv[i]._shaderDefs &= ~pc.SHADERDEF_LM;
+                    rcv[i]._shaderDefs &= ~pc.SHADERDEF_LMDIR;
                     //rcv[i].mask |= pc.MASK_DYNAMIC;
                     //rcv[i].mask &= ~pc.MASK_LIGHTMAP;
                 }
@@ -377,7 +378,7 @@ pc.extend(pc, function () {
                 lmMaterialDir.chunks.transformVS = xformUv1; // draw UV1
                 lmMaterialDir.chunks.lightDiffuseLambertPS = chunks.bakeLightDirPS;
                 lmMaterialDir.chunks.lightmapSinglePS = chunks.lightmapSingleDirVisualizePS;
-                lmMaterialDir.chunks.endPS = chunks.bakeLmEndDir; // encode to RGBM
+                lmMaterialDir.chunks.endPS = chunks.bakeLmEndDirPS; // encode to RGBM
 
                 // don't bake ambient
                 lmMaterialDir.ambient = new pc.Color(0,0,0);
@@ -390,6 +391,7 @@ pc.extend(pc, function () {
                 lmMaterialDir.cull = pc.CULLFACE_NONE;
                 lmMaterialDir.forceUv1 = true; // provide data to xformUv1
                 lmMaterialDir.update();
+                lmMaterialDir.updateShader(device, scene);
             }
 
             for(node=0; node<nodes.length; node++) {
@@ -412,6 +414,7 @@ pc.extend(pc, function () {
                     // patch meshInstance
                     m = rcv[i];
                     m._shaderDefs &= ~pc.SHADERDEF_LM; // disable LM define, if set, to get bare ambient on first pass
+                    m._shaderDefs &= ~pc.SHADERDEF_LMDIR;
                     m.mask = maskLightmap; // only affected by LM lights
                     m.deleteParameter("texture_lightMap");
                     m.deleteParameter("texture_lightMapDir");
@@ -434,7 +437,6 @@ pc.extend(pc, function () {
             var renderMaterial = [lmMaterial, lmMaterialDir];
             var renderLmaps = [lmaps, lmapsDir];
             var renderTarg = [nodeTarg, nodeTargDir];
-            var renderTexName = ["texture_lightMap", "texture_lightMapDir"];
 
             // Disable all bakeable lights
             for(j=0; j<lights.length; j++) {
@@ -482,8 +484,10 @@ pc.extend(pc, function () {
                         texTmp = targTmp.colorBuffer;
                         scene.drawCalls = [];
                         for(j=0; j<rcv.length; j++) {
-                            rcv[j].setParameter("texture_lightMap", lm);
-                            scene.drawCalls.push(rcv[j]);
+                            m = rcv[j];
+                            m.material = renderMaterial[renderMode];
+                            m.setParameter("texture_lightMap", lm);
+                            scene.drawCalls.push(m);
                         }
                         scene.updateShaders = true;
 
@@ -584,11 +588,14 @@ pc.extend(pc, function () {
                     m.mask = maskBaked;
 
                     // roll material back
-                    rcv[i].material = origMat[id];
+                    m.material = origMat[id];
 
                     // Set lightmap
-                    rcv[i].setParameter("texture_lightMap", lm);
-                    if (bakeDir) rcv[i].setParameter("texture_lightMapDir", lmDir);
+                    m.setParameter("texture_lightMap", lm);
+                    if (bakeDir) {
+                        m.setParameter("texture_lightMapDir", lmDir);
+                        m._shaderDefs |= pc.SHADERDEF_LMDIR;
+                    }
 
                     id++;
                 }

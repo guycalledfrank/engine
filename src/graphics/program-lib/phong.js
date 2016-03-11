@@ -530,7 +530,9 @@ pc.programlib.phong = {
         var addAmbient = true;
         if (options.lightMap || options.lightMapVertexColor) {
             code += this._addMap("light", options, chunks, uvOffset,
-                options.lightMapVertexColor? chunks.lightmapSingleVertPS : chunks.lightmapSinglePS, options.lightMapFormat);
+                options.lightMapVertexColor? chunks.lightmapSingleVertPS :
+                (options.dirLightmap? chunks.lightmapDirPS : chunks.lightmapSinglePS),
+                options.lightMapFormat);
             addAmbient = options.lightMapWithoutAmbient;
         }
 
