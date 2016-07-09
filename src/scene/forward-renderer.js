@@ -41,6 +41,12 @@ pc.extend(pc, function () {
     var directionalShadowEpsilon = 0.01;
     var pixelOffset = new pc.Vec2();
     var blurScissorRect = {x:1, y:1, z:0, w:0};
+    var localLights = [];
+    var screenPos = new pc.Vec3();
+    var lightMinX = [];
+    var lightMinY = [];
+    var lightMaxX = [];
+    var lightMaxY = [];
 
     var shadowCamView = new pc.Mat4();
     var shadowCamViewProj = new pc.Mat4();
@@ -50,6 +56,8 @@ pc.extend(pc, function () {
     var viewMat = new pc.Mat4();
     var viewMat3 = new pc.Mat3();
     var viewProjMat = new pc.Mat4();
+    var viewProjInvMat = new pc.Mat4();
+    var projInvMat = new pc.Mat4();
     var frustumDiagonal = new pc.Vec3();
     var tempSphere = {center:null, radius:0};
     var meshPos;
@@ -62,6 +70,32 @@ pc.extend(pc, function () {
     var shadowMapCache = [{}, {}, {}, {}];
     var shadowMapCubeCache = {};
     var maxBlurSize = 25;
+
+    var _createTexture = function(device, width, height) {
+        var format = pc.PIXELFORMAT_RGBA32F;
+        var texture = new pc.Texture(device, {
+            width: width,
+            height: height,
+            format: format,
+            cubemap: false,
+            autoMipmap: false
+        });
+        texture.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+        texture.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+        texture.minFilter = pc.FILTER_NEAREST;
+        texture.magFilter = pc.FILTER_NEAREST;
+        return texture;
+    };
+
+    var intersectSphere = function(rayOrigin, rayDir, sphere) {
+        rayOrigin.sub(sphere);
+        var b = rayOrigin.dot(rayDir);
+        if (b>0) return false;
+        var c = rayOrigin.dot(rayOrigin) - sphere.w * sphere.w;
+        var h = b * b - c;
+        return h >= 0.0;
+    };
+
 
     // The 8 points of the camera frustum transformed to light space
     var frustumPoints = [];
@@ -595,6 +629,9 @@ pc.extend(pc, function () {
         this.lightCookieId = [];
         this.lightCookieIntId = [];
 
+        this.tileTexId = scope.resolve("texture_tile");
+        this.lightTexId = scope.resolve("texture_light");
+
         this.depthMapId = scope.resolve('uDepthMap');
         this.screenSizeId = scope.resolve('uScreenSize');
         this._screenSize = new pc.Vec4();
@@ -680,6 +717,8 @@ pc.extend(pc, function () {
             var projMat = camera.getProjectionMatrix();
             this.projId.setValue(projMat.data);
 
+            projInvMat.copy(projMat).invert();
+
             // ViewInverse Matrix
             var pos = camera._node.getPosition();
             var rot = camera._node.getRotation();
@@ -707,6 +746,8 @@ pc.extend(pc, function () {
             // ViewProjection Matrix
             viewProjMat.mul2(projMat, viewMat);
             this.viewProjId.setValue(viewProjMat.data);
+
+            viewProjInvMat.copy(viewProjMat).invert();
 
             // View Position (world space)
             this.viewPosId.setValue(camera._node.getPosition().data);
@@ -1827,6 +1868,7 @@ pc.extend(pc, function () {
             scene._globalLights.length = 0;
             scene._localLights[0].length = 0;
             scene._localLights[1].length = 0;
+            localLights.length = 0;
             for (i = 0; i < lights.length; i++) {
                 light = lights[i];
                 if (light.getEnabled()) {
@@ -1835,6 +1877,7 @@ pc.extend(pc, function () {
                     } else {
                         scene._localLights[light.getType() === pc.LIGHTTYPE_POINT ? 0 : 1].push(light);
                     }
+                    localLights.push(light);
                 }
             }
             return lights;
@@ -1856,6 +1899,211 @@ pc.extend(pc, function () {
                     pc._autoInstanceBufferData = new Float32Array(pc._autoInstanceBuffer.lock());
                 }
             }
+        },
+
+        prepareTiles: function(device, camera) {
+            var xtiles = 64;
+            var ytiles = 64;
+            var firstRun = true;//false;
+            if (!this.lightTex) {
+                this.lightTex = _createTexture(device, 4096, 1);
+                this.tileTex = _createTexture(device, xtiles, ytiles);
+                firstRun = true;
+            }
+            if (firstRun) {
+                var lpixels = this.lightTex.lock();
+                var tpixels = this.tileTex.lock();
+                var light;
+                var pos;
+                /*for(i=0; i<lights.length; i++) {
+                    light = lights[i];
+                    pos = light._node.getPosition();
+                    pixels[i*4] = pos.x;
+                    pixels[i*4+1] = pos.y;
+                    pixels[i*4+2] = pos.z;
+                    pixels[i*4+3] = light.getAttenuationEnd();
+                }
+                this.lightTex.unlock();*/
+                /*var x, y, u, v, id;
+                var loffset = 0;
+                var lcount = 0;
+                var prevOffset = -1;
+                var vecFromCam = new pc.Vec3();
+                var reuse;
+                var sphere = new pc.Vec4();
+                var tileLights = [];
+                tileLights.length = 8;
+                var reusePrevTile;
+                var tpixels = this.tileTex.lock();
+                for(y=0; y<ytiles; y++) {
+                    for(x=0; x<xtiles; x++) {
+
+                        id = (y*xtiles+x) * 4;
+                        tpixels[id] = 0;
+                        tpixels[id + 1] = 0;
+                        tpixels[id + 2] = 0;
+                        tpixels[id + 3] = 0;
+                        lcount = 0;
+                        reusePrevTile = true;
+
+                        vecFromCam = camera.screenToWorld(x, ytiles-y, 1, xtiles, ytiles).sub(camera._node.getPosition()).normalize();
+
+                        for(i=0; i<lights.length; i++) {
+                            light = lights[i];
+                            if (!light.getEnabled()) continue;
+                            pos = light._node.getPosition();
+                            sphere.x = pos.x;
+                            sphere.y = pos.y;
+                            sphere.z = pos.z;
+                            sphere.w = light.getAttenuationEnd();
+                            if (intersectSphere(camera._node.getPosition().clone(), vecFromCam, sphere)) {
+                                lpixels[(loffset+lcount)*4] = sphere.x;
+                                lpixels[(loffset+lcount)*4+1] = sphere.y;
+                                lpixels[(loffset+lcount)*4+2] = sphere.z;
+                                lpixels[(loffset+lcount)*4+3] = sphere.w;
+                                if (tileLights[lcount] !== i) reusePrevTile = false;
+                                tileLights[lcount] = i;
+                                lcount++;
+                            }
+                        }
+                        if (lcount > 0) {
+                            if (reusePrevTile) {
+                                tpixels[id] = prevOffset;
+                                tpixels[id + 1] = lcount;
+                            } else {
+                                tpixels[id] = loffset;
+                                tpixels[id + 1] = lcount;
+                                prevOffset = loffset;
+                                loffset += lcount;
+                            }
+                        }
+                    }
+                }*/
+
+                for(i=0; i<xtiles*ytiles*4; i++) {
+                    tpixels[i] = 0;
+                }
+
+                /*var o, r2, z2, l2;
+                var radius;
+                var axaf, axbf;
+                var axaX, axaY, axbX, axbY;
+                var cenX, cenY;
+                var minX = Number.MAX_VALUE;
+                var maxX = -Number.MAX_VALUE;
+                var minY = Number.MAX_VALUE;
+                var maxY = -Number.MAX_VALUE;
+                var ox, oy, oz;
+                var p0x, p1x, p2x, p3x;
+                var p0y, p1y, p2y, p3y;
+                var x, y, id;
+                var fle = 1.0; // 90
+                this.updateCameraFrustum(camera);
+                var view = viewMat.data;
+                var invAspect = 1.0 / camera._aspect;
+                var numLights = localLights.length;
+                for(i=0; i<numLights; i++) {
+                    light = localLights[i];
+                    radius = light._attenuationEnd;
+                    pos = light._node.getPosition().data;
+                    minX = Number.MAX_VALUE;
+                    maxX = -Number.MAX_VALUE;
+                    minY = Number.MAX_VALUE;
+                    maxY = -Number.MAX_VALUE;
+                    //viewMat.transformPoint(light._node.getPosition(), screenPos);
+                    //screenPos.z *= -1;
+                    //o = screenPos;
+                    ox =
+                        pos[0] * view[0] +
+                        pos[1] * view[4] +
+                        pos[2] * view[8] +
+                        view[12];
+                    oy =
+                        pos[0] * view[1] +
+                        pos[1] * view[5] +
+                        pos[2] * view[9] +
+                        view[13];
+                    oz =
+                        pos[0] * view[2] +
+                        pos[1] * view[6] +
+                        pos[2] * view[10] +
+                        view[14];
+                    oz *= -1;
+                    r2 = radius * radius;
+                    z2 = oz * oz;
+                    l2 = ox*ox + oy*oy + oz*oz;
+                    axaf = fle * Math.sqrt(-r2*(r2-l2)/((l2-z2)*(r2-z2)*(r2-z2)));
+                    axaX = axaf * ox;
+                    axaY = axaf * oy;
+                    axbf = fle * Math.sqrt(-r2*(r2-l2)/((l2-z2)*(r2-z2)*(r2-l2)));
+                    axbX = axbf * -oy;
+                    axbY = axbf * ox;
+                    cenX = fle * oz*ox/(z2-r2);
+                    cenY = fle * oz*oy/(z2-r2);
+                    p0x = cenX - axaX;
+                    p0y = cenY - axaY;
+                    p1x = cenX + axaX;
+                    p1y = cenY + axaY;
+                    p2x = cenX - axbX;
+                    p2y = cenY - axbY;
+                    p3x = cenX + axbX;
+                    p3y = cenY + axbY;
+
+                    if (p0x < minX) minX = p0x;
+                    if (p1x < minX) minX = p1x;
+                    if (p2x < minX) minX = p2x;
+                    if (p3x < minX) minX = p3x;
+
+                    if (p0y < minY) minY = p0y;
+                    if (p1y < minY) minY = p1y;
+                    if (p2y < minY) minY = p2y;
+                    if (p3y < minY) minY = p3y;
+
+                    if (p0x > maxX) maxX = p0x;
+                    if (p1x > maxX) maxX = p1x;
+                    if (p2x > maxX) maxX = p2x;
+                    if (p3x > maxX) maxX = p3x;
+
+                    if (p0y > maxY) maxY = p0y;
+                    if (p1y > maxY) maxY = p1y;
+                    if (p2y > maxY) maxY = p2y;
+                    if (p3y > maxY) maxY = p3y;
+
+                    minX *= invAspect;
+                    maxX *= invAspect;
+
+                    minX = Math.floor((minX*0.5+0.5)* xtiles);
+                    minY = Math.floor((minY*0.5+0.5)* ytiles);
+                    maxX = Math.ceil((maxX*0.5+0.5)* xtiles);
+                    maxY = Math.ceil((maxY*0.5+0.5)* ytiles);
+
+                    lightMinX[i] = minX;
+                    lightMinY[i] = minY;
+                    lightMaxX[i] = maxX;
+                    lightMaxY[i] = maxY;
+                }
+
+                for(y=0; y<ytiles; y++) {
+                    for(x=0; x<xtiles; x++) {
+                        id = (y*xtiles+x) * 4;
+                        for(i=0; i<numLights; i++) {
+                            if (x >= lightMinX[i] && x <= lightMaxX[i]) {
+                                if (y >= lightMinY[i] && y <= lightMaxY[i]) {
+                                    //tpixels[id] = 1;
+                                }
+                            }
+                        }
+                    }
+                }*/
+
+
+                this.tileTex.unlock();
+                this.lightTex.unlock();
+            }
+            pc.tileTex = this.tileTex;
+
+            this.tileTexId.setValue(this.tileTex);
+            this.lightTexId.setValue(this.lightTex);
         },
 
         /**
@@ -1894,7 +2142,7 @@ pc.extend(pc, function () {
                 }
             }
 
-            var i;
+            var i, j;
 
             // Scene data
             var drawCalls = scene.drawCalls;
@@ -1903,6 +2151,8 @@ pc.extend(pc, function () {
             // Sort lights by type
             // TODO: preprocess instead of per-frame // or maybe just remove it
             var lights = this.sortLights(scene);
+
+            this.prepareTiles(device, camera);
 
             // Camera data
             var camPos = camera._node.getPosition().data;

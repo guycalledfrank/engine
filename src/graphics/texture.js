@@ -71,7 +71,7 @@ pc.extend(pc, function () {
 
         // Power of two dependent properties
         var pot = pc.math.powerOfTwo(this._width) && pc.math.powerOfTwo(this._height);
-        this._autoMipmap = pot;
+        this._autoMipmap = false;//pot;
         this._addressU = pot? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE;
         this._addressV = this.addressU;
         this._minFilter = pot? pc.FILTER_LINEAR_MIPMAP_LINEAR : pc.FILTER_LINEAR;

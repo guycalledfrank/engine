@@ -397,6 +397,11 @@ pc.programlib.standard = {
         var shadowTypeUsed = [];
         var useVsm = false;
         var light;
+
+        code += "uniform sampler2D texture_tile;\n"
+        code += "uniform sampler2D texture_light;\n"
+        code += "uniform vec4 uScreenSize;\n"
+
         for (i = 0; i < options.lights.length; i++) {
             light = options.lights[i];
             lightType = light.getType();
@@ -730,7 +735,7 @@ pc.programlib.standard = {
                 code += "   addReflection();\n";
             }
 
-            for (i = 0; i < options.lights.length; i++) {
+            /*for (i = 0; i < options.lights.length; i++) {
                 // The following code is not decoupled to separate shader files, because most of it can be actually changed to achieve different behaviours like:
                 // - different falloffs
                 // - different shadow coords (point shadows will use drastically different genShadowCoord)
@@ -837,7 +842,12 @@ pc.programlib.standard = {
                     code += "   dSpecularLight += dAtten * light"+i+"_color" + (usesCookieNow? " * dAtten3" : "") + ";\n";
                 }
                 code += "\n";
-            }
+            }*/
+
+            hasPointLights = true;
+            usesLinearFalloff = true;
+            code += chunks.clusteredPS;
+
 
             if ((cubemapReflection || options.sphereMap || options.dpAtlas) && options.refraction) {
                 code += "   addRefraction();\n";
