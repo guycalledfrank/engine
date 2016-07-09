@@ -47,6 +47,8 @@ pc.extend(pc, function () {
     var lightMinY = [];
     var lightMaxX = [];
     var lightMaxY = [];
+    var lightPos = [];
+    var lightRadius = [];
 
     var shadowCamView = new pc.Mat4();
     var shadowCamViewProj = new pc.Mat4();
@@ -1984,7 +1986,7 @@ pc.extend(pc, function () {
                     tpixels[i] = 0;
                 }
 
-                /*var o, r2, z2, l2;
+                var o, r2, z2, l2;
                 var radius;
                 var axaf, axbf;
                 var axaX, axaY, axbX, axbY;
@@ -1997,11 +1999,17 @@ pc.extend(pc, function () {
                 var p0x, p1x, p2x, p3x;
                 var p0y, p1y, p2y, p3y;
                 var x, y, id;
-                var fle = 1.0; // 90
+                var fle = 2.0; // 45
                 this.updateCameraFrustum(camera);
                 var view = viewMat.data;
                 var invAspect = 1.0 / camera._aspect;
                 var numLights = localLights.length;
+                var loffset = 0;
+                var lcount = 0;
+                var prevOffset = -1;
+                var tileLights = [];
+                tileLights.length = 8;
+                var reusePrevTile;
                 for(i=0; i<numLights; i++) {
                     light = localLights[i];
                     radius = light._attenuationEnd;
@@ -2072,29 +2080,50 @@ pc.extend(pc, function () {
                     minX *= invAspect;
                     maxX *= invAspect;
 
-                    minX = Math.floor((minX*0.5+0.5)* xtiles);
-                    minY = Math.floor((minY*0.5+0.5)* ytiles);
-                    maxX = Math.ceil((maxX*0.5+0.5)* xtiles);
-                    maxY = Math.ceil((maxY*0.5+0.5)* ytiles);
-
-                    lightMinX[i] = minX;
-                    lightMinY[i] = minY;
-                    lightMaxX[i] = maxX;
-                    lightMaxY[i] = maxY;
+                    lightMinX[i] = Math.floor((minX*0.5+0.5)* xtiles);
+                    lightMinY[i] = Math.floor((minY*0.5+0.5)* ytiles);
+                    lightMaxX[i] = Math.ceil((maxX*0.5+0.5)* xtiles);
+                    lightMaxY[i] = Math.ceil((maxY*0.5+0.5)* ytiles);
+                    lightPos[i] = pos;
+                    lightRadius[i] = radius;
                 }
 
                 for(y=0; y<ytiles; y++) {
                     for(x=0; x<xtiles; x++) {
+
                         id = (y*xtiles+x) * 4;
+                        lcount = 0;
+                        reusePrevTile = true;
+
                         for(i=0; i<numLights; i++) {
                             if (x >= lightMinX[i] && x <= lightMaxX[i]) {
                                 if (y >= lightMinY[i] && y <= lightMaxY[i]) {
-                                    //tpixels[id] = 1;
+
+                                    pos = lightPos[i];
+                                    lpixels[(loffset+lcount)*4] = pos[0];
+                                    lpixels[(loffset+lcount)*4+1] = pos[1];
+                                    lpixels[(loffset+lcount)*4+2] = pos[2];
+                                    lpixels[(loffset+lcount)*4+3] = lightRadius[i];
+                                    if (tileLights[lcount] !== i) reusePrevTile = false;
+                                    tileLights[lcount] = i;
+                                    lcount++;
                                 }
                             }
                         }
+
+                        if (lcount > 0) {
+                            if (reusePrevTile) {
+                                tpixels[id] = prevOffset;
+                                tpixels[id + 1] = lcount;
+                            } else {
+                                tpixels[id] = loffset;
+                                tpixels[id + 1] = lcount;
+                                prevOffset = loffset;
+                                loffset += lcount;
+                            }
+                        }
                     }
-                }*/
+                }
 
 
                 this.tileTex.unlock();

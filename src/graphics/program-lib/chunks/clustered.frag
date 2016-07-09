@@ -20,8 +20,9 @@ for(int i=0; i<MAX_LIGHTS_PER_TILE; i++) {
 
 //dDiffuseLight.r = float(loffset)/4096.0;
 
-    getLightDirPoint(light0_position);
+/*    getLightDirPoint(light0_position);
     dAtten = getFalloffLinear(light0_radius);
     dAtten *= getLightDiffuse();
-    dDiffuseLight = dAtten * light0_color * tileData.x;
-dDiffuseLight.r = tileData.x;//loffset!=0? 1.0 : 0.0;
+    dDiffuseLight = dAtten * light0_color * tileData.x;*/
+dDiffuseLight.r = float(lcount);//!=0? 1.0 : 0.0;
+
