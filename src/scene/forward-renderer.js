@@ -47,8 +47,11 @@ pc.extend(pc, function () {
     var lightMinY = [];
     var lightMaxX = [];
     var lightMaxY = [];
+    var lightMinZ = [];
+    var lightMaxZ = [];
     var lightPos = [];
     var lightRadius = [];
+    var sphere = new pc.Vec4();
 
     var shadowCamView = new pc.Mat4();
     var shadowCamViewProj = new pc.Mat4();
@@ -1864,7 +1867,7 @@ pc.extend(pc, function () {
             // #endif
         },
 
-        sortLights: function(scene) {
+        sortLights: function(camera, scene) {
             var light;
             var lights = scene._lights;
             scene._globalLights.length = 0;
@@ -1879,7 +1882,11 @@ pc.extend(pc, function () {
                     } else {
                         scene._localLights[light.getType() === pc.LIGHTTYPE_POINT ? 0 : 1].push(light);
                     }
+
+                    light.getBoundingSphere(tempSphere);
+                    if (!camera._frustum.containsSphere(tempSphere)) continue;
                     localLights.push(light);
+
                 }
             }
             return lights;
@@ -1906,10 +1913,11 @@ pc.extend(pc, function () {
         prepareTiles: function(device, camera) {
             var xtiles = 64;
             var ytiles = 64;
+            var ztiles = 1;//6;
             var firstRun = true;//false;
             if (!this.lightTex) {
                 this.lightTex = _createTexture(device, 4096, 1);
-                this.tileTex = _createTexture(device, xtiles, ytiles);
+                this.tileTex = _createTexture(device, xtiles, ytiles * ztiles);
                 firstRun = true;
             }
             if (firstRun) {
@@ -1982,7 +1990,7 @@ pc.extend(pc, function () {
                     }
                 }*/
 
-                for(i=0; i<xtiles*ytiles*4; i++) {
+                for(i=0; i<xtiles*ytiles*ztiles*4; i++) {
                     tpixels[i] = 0;
                 }
 
@@ -1996,10 +2004,11 @@ pc.extend(pc, function () {
                 var minY = Number.MAX_VALUE;
                 var maxY = -Number.MAX_VALUE;
                 var ox, oy, oz;
+                var topX, topY, botX, botY;
                 var p0x, p1x, p2x, p3x;
                 var p0y, p1y, p2y, p3y;
                 var x, y, id;
-                var fle = 2.0; // 45
+                var fle = 1.0; // 90
                 this.updateCameraFrustum(camera);
                 var view = viewMat.data;
                 var invAspect = 1.0 / camera._aspect;
@@ -2007,9 +2016,15 @@ pc.extend(pc, function () {
                 var loffset = 0;
                 var lcount = 0;
                 var prevOffset = -1;
+                var prevCount = -1;
                 var tileLights = [];
                 tileLights.length = 8;
                 var reusePrevTile;
+                var near = camera.getNearClip();
+                var far = camera.getFarClip();
+                //var distToTiles = (1.0 / (far - near)) * ztiles;
+                var normZ = 1.0 / (far - near);
+                var zz;
                 for(i=0; i<numLights; i++) {
                     light = localLights[i];
                     radius = light._attenuationEnd;
@@ -2021,6 +2036,25 @@ pc.extend(pc, function () {
                     //viewMat.transformPoint(light._node.getPosition(), screenPos);
                     //screenPos.z *= -1;
                     //o = screenPos;
+                    oz =
+                        pos[0] * view[2] +
+                        pos[1] * view[6] +
+                        pos[2] * view[10] +
+                        view[14];
+                    oz *= -1;
+                    if ((oz - radius) < 0) {
+                        lightMinX[i] = 0;
+                        lightMinY[i] = 0;
+                        lightMaxX[i] = xtiles;
+                        lightMaxY[i] = ytiles;
+                        zz = ((oz - radius) - near) * normZ;
+                        lightMinZ[i] = Math.floor(zz * ztiles);
+                        zz = ((oz + radius) - near) * normZ;
+                        lightMaxZ[i] = Math.floor(zz * ztiles);
+                        lightPos[i] = pos;
+                        lightRadius[i] = radius;
+                        continue;
+                    }
                     ox =
                         pos[0] * view[0] +
                         pos[1] * view[4] +
@@ -2031,12 +2065,6 @@ pc.extend(pc, function () {
                         pos[1] * view[5] +
                         pos[2] * view[9] +
                         view[13];
-                    oz =
-                        pos[0] * view[2] +
-                        pos[1] * view[6] +
-                        pos[2] * view[10] +
-                        view[14];
-                    oz *= -1;
                     r2 = radius * radius;
                     z2 = oz * oz;
                     l2 = ox*ox + oy*oy + oz*oz;
@@ -2048,14 +2076,30 @@ pc.extend(pc, function () {
                     axbY = axbf * ox;
                     cenX = fle * oz*ox/(z2-r2);
                     cenY = fle * oz*oy/(z2-r2);
-                    p0x = cenX - axaX;
+
+                    /*p0x = cenX - axaX;
                     p0y = cenY - axaY;
                     p1x = cenX + axaX;
                     p1y = cenY + axaY;
                     p2x = cenX - axbX;
                     p2y = cenY - axbY;
                     p3x = cenX + axbX;
-                    p3y = cenY + axbY;
+                    p3y = cenY + axbY;*/
+
+                    topX = cenX + axbX;
+                    topY = cenY + axbY;
+                    botX = cenX - axbX;
+                    botY = cenY - axbY;
+
+                    p0x = topX - axaX;
+                    p0y = topY - axaY;
+                    p1x = topX + axaX;
+                    p1y = topY + axaY;
+
+                    p2x = botX - axaX;
+                    p2y = botY - axaY;
+                    p3x = botX + axaX;
+                    p3y = botY + axaY;
 
                     if (p0x < minX) minX = p0x;
                     if (p1x < minX) minX = p1x;
@@ -2082,49 +2126,89 @@ pc.extend(pc, function () {
 
                     lightMinX[i] = Math.floor((minX*0.5+0.5)* xtiles);
                     lightMinY[i] = Math.floor((minY*0.5+0.5)* ytiles);
-                    lightMaxX[i] = Math.ceil((maxX*0.5+0.5)* xtiles);
-                    lightMaxY[i] = Math.ceil((maxY*0.5+0.5)* ytiles);
+                    //lightMaxX[i] = Math.ceil((maxX*0.5+0.5)* xtiles);
+                    //lightMaxY[i] = Math.ceil((maxY*0.5+0.5)* ytiles);
+                    lightMaxX[i] = Math.floor((maxX*0.5+0.5)* xtiles);
+                    lightMaxY[i] = Math.floor((maxY*0.5+0.5)* ytiles);
+
+                    //lightMinZ[i] = Math.floor(((oz - radius) - near) * distToTiles);
+                    //lightMaxZ[i] = Math.floor(((oz + radius) - near) * distToTiles);
+
+                    zz = ((oz - radius) - near) * normZ;
+                    /*zz = 1 - zz;
+                    zz *= zz;
+                    zz = 1 - zz;*/
+                    lightMinZ[i] = Math.floor(zz * ztiles);
+
+                    zz = ((oz + radius) - near) * normZ;
+                    /*zz = 1 - zz;
+                    zz *= zz;
+                    zz = 1 - zz;*/
+                    lightMaxZ[i] = Math.floor(zz * ztiles);
+
                     lightPos[i] = pos;
                     lightRadius[i] = radius;
                 }
 
-                for(y=0; y<ytiles; y++) {
-                    for(x=0; x<xtiles; x++) {
+                var xytiles = xtiles * ytiles;
 
-                        id = (y*xtiles+x) * 4;
-                        lcount = 0;
-                        reusePrevTile = true;
+                var z;
+                for(z=0; z<ztiles; z++) {
+                    for(y=0; y<ytiles; y++) {
+                        for(x=0; x<xtiles; x++) {
+                            //for(z=0; z<ztiles; z++) {
 
-                        for(i=0; i<numLights; i++) {
-                            if (x >= lightMinX[i] && x <= lightMaxX[i]) {
-                                if (y >= lightMinY[i] && y <= lightMaxY[i]) {
+                                id = (z*xytiles + y*xtiles+x) * 4;
+                                lcount = 0;
+                                reusePrevTile = true;
 
-                                    pos = lightPos[i];
-                                    lpixels[(loffset+lcount)*4] = pos[0];
-                                    lpixels[(loffset+lcount)*4+1] = pos[1];
-                                    lpixels[(loffset+lcount)*4+2] = pos[2];
-                                    lpixels[(loffset+lcount)*4+3] = lightRadius[i];
-                                    if (tileLights[lcount] !== i) reusePrevTile = false;
-                                    tileLights[lcount] = i;
-                                    lcount++;
+                                //vecFromCam = camera.screenToWorld(x+0.5, ytiles-y, 1, xtiles, ytiles).sub(camera._node.getPosition()).normalize();
+
+                                for(i=0; i<numLights; i++) {
+                                    if (z >= lightMinZ[i] && z <= lightMaxZ[i]) {
+                                        if (x >= lightMinX[i] && x <= lightMaxX[i]) {
+                                            if (y >= lightMinY[i] && y <= lightMaxY[i]) {
+
+                                                pos = lightPos[i];
+
+                                                /*sphere.x = pos[0];
+                                                sphere.y = pos[1];
+                                                sphere.z = pos[2];
+                                                sphere.w = lightRadius[i];
+                                                if (!intersectSphere(camera._node.getPosition().clone(), vecFromCam, sphere)) continue;*/
+
+                                                lpixels[(loffset+lcount)*4] = pos[0];
+                                                lpixels[(loffset+lcount)*4+1] = pos[1];
+                                                lpixels[(loffset+lcount)*4+2] = pos[2];
+                                                lpixels[(loffset+lcount)*4+3] = lightRadius[i];
+                                                if (tileLights[lcount] !== i || lcount >= prevCount) reusePrevTile = false;
+                                                tileLights[lcount] = i;
+                                                lcount++;
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                        }
 
-                        if (lcount > 0) {
-                            if (reusePrevTile) {
-                                tpixels[id] = prevOffset;
-                                tpixels[id + 1] = lcount;
-                            } else {
-                                tpixels[id] = loffset;
-                                tpixels[id + 1] = lcount;
-                                prevOffset = loffset;
-                                loffset += lcount;
-                            }
+                                if (lcount > 0) {
+                                    if (reusePrevTile) {
+                                        tpixels[id] = prevOffset;
+                                        tpixels[id + 1] = lcount;
+                                    } else {
+                                        tpixels[id] = loffset;
+                                        tpixels[id + 1] = lcount;
+                                        prevOffset = loffset;
+                                        prevCount = lcount;
+                                        loffset += lcount;
+                                    }
+                                }
+                            //}
                         }
                     }
                 }
 
+                if (loffset > 4096) console.error("Out of light buffer");
+                //if (tileLights.length > 8) console.error("Out of light intersections");
+                //console.log("usage: " + loffset);
 
                 this.tileTex.unlock();
                 this.lightTex.unlock();
@@ -2177,9 +2261,12 @@ pc.extend(pc, function () {
             var drawCalls = scene.drawCalls;
             var shadowCasters = scene.shadowCasters;
 
+            // Update camera
+            this.updateCameraFrustum(camera);
+
             // Sort lights by type
             // TODO: preprocess instead of per-frame // or maybe just remove it
-            var lights = this.sortLights(scene);
+            var lights = this.sortLights(camera, scene);
 
             this.prepareTiles(device, camera);
 
@@ -2189,9 +2276,6 @@ pc.extend(pc, function () {
 
             // Set up instancing if needed
             this.setupInstancing(device);
-
-            // Update camera
-            this.updateCameraFrustum(camera);
 
             // Update all skin matrices to properly cull skinned objects (but don't update rendering data yet)
             this.updateCpuSkinMatrices(drawCalls);

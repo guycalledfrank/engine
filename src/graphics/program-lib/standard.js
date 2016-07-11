@@ -401,6 +401,9 @@ pc.programlib.standard = {
         code += "uniform sampler2D texture_tile;\n"
         code += "uniform sampler2D texture_light;\n"
         code += "uniform vec4 uScreenSize;\n"
+        code += "uniform mat4 matrix_view;\n"
+        code += "uniform float camera_near;\n"
+        code += "uniform float camera_far;\n"
 
         for (i = 0; i < options.lights.length; i++) {
             light = options.lights[i];
