@@ -1576,6 +1576,10 @@ pc.extend(pc, function () {
             }
         },
 
+        destroyVao: function (vao) {
+            this.gl.deleteVertexArray(vao);
+        }
+
         /**
          * @function
          * @name pc.GraphicsDevice#draw

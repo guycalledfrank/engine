@@ -39,13 +39,6 @@ pc.extend(pc, function () {
         this.vao = null;
     };
 
-    pc.extend(Mesh.prototype, {
-        _destroyVao: function (device) {
-            device.gl.deleteVertexArray(this.vao);
-            this.vao = null;
-        }
-    });
-
     /**
      * @name pc.MeshInstance
      * @class An instance of a {@link pc.Mesh}. A single mesh can be referenced by many
@@ -138,7 +131,8 @@ pc.extend(pc, function () {
             if (this._mesh) {
                 this._mesh._refCount--;
                 if (this._mesh._refCount < 1 && this._mesh.vao) {
-                    this._mesh._destroyVao(this._mesh.vertexBuffer.device);
+                    this._mesh.vertexBuffer.device.destroyVao(this._mesh.vao);
+                    this._mesh.vao = null;
                 }
             }
             this._mesh = mesh;

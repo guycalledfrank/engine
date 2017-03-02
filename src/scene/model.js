@@ -155,7 +155,7 @@ pc.extend(pc, function () {
                     if (mesh._refCount < 1) {
                         if (mesh.vao) {
                             device = device || mesh.vertexBuffer.device;
-                            mesh._destroyVao(device);
+                            device.destroyVao(mesh.vao);
                             mesh.vao = null;
                         }
                         if (mesh.vertexBuffer) {
