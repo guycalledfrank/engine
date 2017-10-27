@@ -863,6 +863,7 @@ pc.extend(pc, function () {
                               prefilteredCubeMap4;
 
                 if (useDp && allMips) {
+                    console.log("dp");
                     if (!prefilteredCubeMap128.dpAtlas) {
                         prefilteredCubeMap128.dpAtlas = pc.generateDpAtlas(device,
                             [prefilteredCubeMap128, prefilteredCubeMap64, prefilteredCubeMap32, prefilteredCubeMap16,
@@ -877,6 +878,7 @@ pc.extend(pc, function () {
                     if (prefilteredCubeMap128._levels.length<6) {
                         if (allMips) {
                             // Multiple -> single (provided cubemap per mip, but can use texCubeLod)
+                            console.log("m->s");
                             this._setParameter('texture_prefilteredCubeMap128', prefilteredCubeMap128);
                         } else {
                             console.log("Can't use prefiltered cubemap: " + allMips + ", " + useTexCubeLod + ", " + prefilteredCubeMap128._levels);
@@ -886,6 +888,7 @@ pc.extend(pc, function () {
                         this._setParameter('texture_prefilteredCubeMap128', prefilteredCubeMap128);
                     }
                 } else if (allMips) {
+                    console.log("s");
                     // Multiple (no texCubeLod, but able to use cubemap per mip)
                     this._setParameter('texture_prefilteredCubeMap128', prefilteredCubeMap128);
                     this._setParameter('texture_prefilteredCubeMap64', prefilteredCubeMap64);
